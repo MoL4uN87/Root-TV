@@ -75,6 +75,7 @@ function fetchOnce(url, cookie, callback) {
     else chunks.push(chunk);
   });
   proc.stderr.on('data', function (chunk) { errorText += chunk.toString('utf8').slice(0, 2048); });
+  proc.stdin.on('error', function () { finish(new Error('upstream_connection')); });
   proc.on('error', function () { finish(new Error('curl_unavailable')); });
   proc.on('close', function (code) {
     var match = /SEENA_STATUS:(\d{3}):([^\s]+)/.exec(errorText);
@@ -86,7 +87,7 @@ function fetchOnce(url, cookie, callback) {
 
 function fetchWithRetry(url, cookie, attempt, callback) {
   fetchOnce(url, cookie, function (error, result) {
-    if (!error && result.status === 403 && attempt < 3) {
+    if (!error && result.status === 403 && attempt < 5) {
       return setTimeout(function () { fetchWithRetry(url, cookie, attempt + 1, callback); }, 300 * attempt);
     }
     callback(error, result);

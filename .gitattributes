@@ -1,2 +1,3 @@
 helper/seena-restart-app text eol=lf
 helper/seena-helper-start text eol=lf
+helper/seena-helper-watch text eol=lf

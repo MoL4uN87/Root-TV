@@ -8,7 +8,7 @@
 
 - Старый снимок `cf_clearance` был нерабочим: challenge появлялся даже в Yandex Browser. Новый снимок отличается по значению clearance; `uid` и `pass` остались прежними.
 - В контролируемой серии на Windows `curl_cffi` с `chrome150` и обычным Chrome User-Agent получил 6/6 challenge 403. С User-Agent Yandex Browser 26.8 (`Chrome/150... YaBrowser/26.8...`) тот же клиент и cookies получил 3/6 HTTP 200. Значит User-Agent существенно влияет, но не устраняет нестабильность Cloudflare.
-- TV `curl-impersonate` с `chrome150`, Yandex User-Agent и новым clearance получает HTTP 200 по HTTP/2, иногда вперемежку с challenge 403. Helper повторяет challenge до трёх раз и возвращает JSON ошибку, если все попытки отклонены.
+- TV `curl-impersonate` с `chrome150`, Yandex User-Agent и новым clearance получает HTTP 200 по HTTP/2, иногда вперемежку с challenge 403. Helper повторяет challenge до пяти раз и возвращает JSON ошибку, если все попытки отклонены.
 - После reboot IPv6 запросы на TV истекали по тайм-ауту; `--ipv4` дал рабочее соединение. HTTP/3 на TV также истекал по тайм-ауту. Рабочая конфигурация использует HTTP/2 поверх IPv4.
 - На этом TV прямой TLS к Kinozal зависает после reboot при отключённом LGVPN. После подключения уже установленного LGVPN тот же helper сразу вернул HTTP 200. По разрешению пользователя startup hook запускает LGVPN при загрузке (до 12 попыток); это направляет сетевой трафик TV через настроенный VPN-сервер. Если VPN не поднялся, helper возвращает понятную ошибку `vpn_disconnected`.
 - Полное совпадение TLS/HTTP2 fingerprint с Yandex Browser не доказано. Автономного прохождения нового Cloudflare challenge на TV нет; Windows нужен для получения свежего clearance.
@@ -20,10 +20,12 @@
 | `/media/developer/apps/usr/palm/applications/com.seena.webos` | Seena 0.3.9 |
 | `/var/lib/webosbrew/seena-helper` | helper, patched curl, ARMHF runtime, `cookies.json` с правами `600` |
 | `/home/r/l` | короткая ссылка на ARMHF ELF loader из persistent каталога |
-| `/var/lib/webosbrew/init.d/seena-helper` | штатный Homebrew startup hook для LGVPN и helper |
+| `/var/lib/webosbrew/init.d/seena-helper` | штатный Homebrew startup hook для LGVPN и watcher helper |
 | `/var/lib/webosbrew/seena-helper/seena-0.3.7-backup` | резервная копия установленной 0.3.7 |
 
 Системные `/lib`, `/usr` и `/etc/ld.so.preload` не меняются. Предупреждение об `/lib/libSegFault.so` от старого preload для ARMHF runtime безвредно. Hook не меняет конфигурацию LGVPN; он запускает существующий `/var/lib/webosbrew/lgvpn/lgvpn-start`.
+
+Watchdog `seena-helper-watch` проверяет локальный `/health` каждые 10 секунд и перезапускает helper, если тот остановился. Его единственный экземпляр защищён `flock`; диагностический `helper.log` доступен только root и не содержит cookies.
 
 ## Сборка и установка
 
