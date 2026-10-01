@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+pid="$(luna-send -n 1 -f luna://com.webos.applicationManager/running '{"subscribe":true}' |
+    /usr/bin/node -e 'var fs = require("fs"); var data = JSON.parse(fs.readFileSync(0, "utf8")); if (!data.returnValue || !Array.isArray(data.running)) process.exit(1); var app = data.running.filter(function (item) { return item.id === "com.seena.webos"; })[0]; if (app) process.stdout.write(app.processid || "");')"
+
+if [ -n "$pid" ]; then
+    luna-send -n 1 -f luna://com.webos.applicationManager/close "{\"processId\":\"$pid\"}" | grep -q '"returnValue": true'
+    i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        i=$((i + 1))
+        if [ "$i" -ge 20 ]; then exit 1; fi
+        sleep 1
+    done
+fi
+
+luna-send -n 1 -f luna://com.webos.applicationManager/launch '{"id":"com.seena.webos"}' | grep -q '"returnValue": true'
