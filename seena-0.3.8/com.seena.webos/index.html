@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seena для webOS</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand"><img src="seena.svg" alt="Seena"><span>для webOS</span></div>
+      <nav id="catalog-nav" aria-label="Каталоги"></nav>
+      <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
+      <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
+    </header>
+
+    <main id="catalog-view" class="view">
+      <section id="hero" class="hero"></section>
+      <section class="content-section">
+        <div class="section-head"><h1 id="section-title">Фильмы</h1><p id="section-count"></p></div>
+        <div id="catalog-grid" class="poster-grid"></div>
+        <button id="load-more" class="more focusable" type="button" hidden>Показать ещё</button>
+      </section>
+    </main>
+
+    <main id="search-view" class="view" hidden>
+      <section class="search-section">
+        <h1>Поиск</h1>
+        <form id="search-form"><input id="search-input" class="focusable" type="search" placeholder="Название фильма или сериала" autocomplete="off"><button class="primary focusable" type="submit">Найти</button></form>
+        <div class="search-tools">
+          <button id="filter-open" class="secondary focusable" type="button">Фильтры</button>
+          <button id="sort-open" class="secondary focusable" type="button">Сортировка: Популярные</button>
+          <span id="filter-summary" class="filter-summary">Без фильтров</span>
+        </div>
+        <p id="search-message" class="muted">Фильтры и сортировка работают без ввода названия.</p>
+        <div id="search-grid" class="poster-grid"></div>
+        <button id="search-load-more" class="more focusable" type="button" hidden>Показать ещё</button>
+      </section>
+    </main>
+
+    <main id="kinozal-view" class="view" hidden>
+      <section class="search-section kinozal-section">
+        <div class="section-head"><h1>Кинозал · Топ раздач</h1><p id="kinozal-page-info" class="muted"></p></div>
+        <div class="kinozal-tools">
+          <button id="kinozal-filter-open" class="secondary focusable" type="button">Фильтры</button>
+          <button id="kinozal-account-open" class="secondary focusable" type="button">Аккаунт</button>
+          <span id="kinozal-auth-status" class="server-status">Кинозал: не проверен</span>
+          <span id="kinozal-filter-summary" class="filter-summary">Избранные раздачи · все годы · все форматы</span>
+        </div>
+        <p id="kinozal-message" class="muted">Загрузка топа…</p>
+        <div id="kinozal-grid" class="poster-grid"></div>
+        <button id="kinozal-more" class="more focusable" type="button" hidden>Показать ещё</button>
+      </section>
+    </main>
+
+    <section id="kinozal-detail-view" class="detail-view kinozal-detail-view" hidden aria-label="Карточка Кинозал">
+      <div class="detail-shade"></div>
+      <div class="detail-content">
+        <button id="kinozal-detail-back" class="text-button focusable" type="button">← К топу</button>
+        <div class="detail-heading">
+          <img id="kinozal-detail-poster" alt="">
+          <div class="detail-copy">
+            <h1 id="kinozal-detail-title"></h1>
+            <div id="kinozal-detail-badges" class="detail-badges"></div>
+            <p id="kinozal-detail-meta" class="detail-meta"></p>
+            <p id="kinozal-detail-genres" class="detail-genres"></p>
+            <div class="detail-actions">
+              <button id="kinozal-watch" class="primary focusable" type="button">▶ Смотреть</button>
+            </div>
+            <p id="kinozal-detail-overview">Загрузка карточки…</p>
+          </div>
+        </div>
+        <section class="detail-section">
+          <h2>Технические данные</h2>
+          <p id="kinozal-tech" class="detail-meta"></p>
+        </section>
+        <section class="detail-section">
+          <h2>Раздача</h2>
+          <p id="kinozal-release-info" class="detail-meta"></p>
+          <p class="muted">Нажмите «Смотреть» — Seena покажет эту раздачу и доступные варианты качества, затем передаст выбранный .torrent локальному TorrServer.</p>
+        </section>
+      </div>
+    </section>
+
+    <section id="detail-view" class="detail-view" hidden aria-label="Карточка">
+      <div id="detail-backdrop" class="detail-backdrop"></div>
+      <div class="detail-shade"></div>
+      <div class="detail-content">
+        <button id="detail-back" class="text-button focusable" type="button">← Назад</button>
+        <div class="detail-heading">
+          <img id="detail-poster" alt="">
+          <div class="detail-copy">
+            <h1 id="detail-title"></h1>
+            <div id="detail-badges" class="detail-badges"></div>
+            <p id="detail-meta" class="detail-meta"></p>
+            <p id="detail-genres" class="detail-genres"></p>
+            <div class="detail-actions">
+              <button id="play-now" class="primary focusable" type="button">▶ Смотреть</button>
+              <button id="torrents-open" class="secondary focusable" type="button">🧲 Торренты</button>
+              <button id="detail-kinozal" class="secondary kinozal-inline focusable" type="button">Kinozal</button>
+              <button id="favorite-toggle" class="secondary focusable" type="button">♡ В избранное</button>
+            </div>
+            <p id="detail-overview"></p>
+          </div>
+        </div>
+
+        <section id="credits-section" class="detail-section" hidden>
+          <h2>Актёры</h2>
+          <div id="cast-list" class="cast-list"></div>
+        </section>
+
+        <section id="sources-section" class="detail-section">
+          <div id="season-tabs" class="season-tabs"></div>
+          <h2>Смотреть</h2>
+          <div id="source-list" class="source-list"></div>
+          <p id="source-note" class="muted"></p>
+        </section>
+
+        <section id="torrent-section" class="detail-section" hidden>
+          <div class="section-title-row"><h2>Торренты</h2><button id="torrent-close" class="text-button focusable" type="button">Скрыть</button></div>
+          <div class="server-row">
+            <span id="torrserver-status" class="server-status">TorrServer: проверка…</span>
+            <button id="torrserver-settings" class="text-button focusable" type="button">Настройки</button>
+          </div>
+          <div id="torrent-list" class="torrent-list"></div>
+          <p id="torrent-note" class="muted"></p>
+        </section>
+
+        <section id="similar-section" class="detail-section" hidden>
+          <h2>Похожие фильмы и сериалы</h2>
+          <div id="similar-grid" class="poster-grid similar-grid"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="person-view" class="person-view" hidden aria-label="Актёр">
+      <div class="person-content">
+        <button id="person-back" class="text-button focusable" type="button">← К фильму</button>
+        <div class="person-heading">
+          <img id="person-photo" alt="">
+          <div>
+            <h1 id="person-name"></h1>
+            <p id="person-original-name" class="muted"></p>
+            <p id="person-count" class="muted"></p>
+          </div>
+        </div>
+        <section class="detail-section">
+          <h2>Фильмография</h2>
+          <div id="person-credits" class="poster-grid person-credits"></div>
+          <p id="person-note" class="muted"></p>
+        </section>
+      </div>
+    </section>
+
+    <section id="player-view" class="player-view" hidden aria-label="Видеоплеер">
+      <video id="player" playsinline></video>
+      <div id="player-top" class="player-top">
+        <button id="player-back" class="text-button focusable" type="button">← К карточке</button>
+        <strong id="player-title"></strong>
+        <p id="player-status"></p>
+      </div>
+      <div id="player-osd" class="player-osd visible">
+        <div class="player-progress-wrap">
+          <span id="player-current">00:00</span>
+          <div id="player-progress" class="player-progress focusable" role="slider" tabindex="0" aria-label="Позиция воспроизведения" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="player-progress-buffer" class="player-progress-buffer"></div>
+            <div id="player-progress-fill" class="player-progress-fill"></div>
+            <div id="player-progress-thumb" class="player-progress-thumb"></div>
+          </div>
+          <span id="player-duration">00:00</span>
+          <span id="player-buffer-info" class="player-buffer-info">Буфер --:--</span>
+        </div>
+        <div class="player-controls">
+          <button id="player-rewind" class="player-control focusable" type="button">← 10 с</button>
+          <button id="player-playpause" class="player-control primary focusable" type="button">❚❚ Пауза</button>
+          <button id="player-stop" class="player-control focusable" type="button">■ Стоп</button>
+          <button id="player-forward" class="player-control focusable" type="button">30 с →</button>
+          <button id="player-audio" class="player-control focusable" type="button">🔊 Аудио</button>
+          <button id="player-subs" class="player-control focusable" type="button">CC Субтитры</button>
+        </div>
+        <div id="track-menu" class="track-menu" hidden>
+          <h3 id="track-menu-title">Дорожки</h3>
+          <div id="track-menu-list"></div>
+          <button id="track-menu-close" class="text-button focusable" type="button">Закрыть</button>
+        </div>
+      </div>
+    </section>
+
+
+    <section id="filter-dialog" class="dialog-backdrop" hidden aria-label="Фильтры поиска">
+      <div class="dialog-card search-dialog-card">
+        <h2>Фильтры</h2>
+        <p id="filter-loading" class="muted" hidden>Загрузка параметров каталога…</p>
+        <div class="filter-block"><h3>Жанр</h3><div id="filter-genres" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Страна</h3><div id="filter-countries" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Годы</h3><div id="filter-years" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Рейтинг</h3><div id="filter-ratings" class="choice-row"></div></div>
+        <div class="dialog-actions">
+          <button id="filter-apply" class="primary focusable" type="button">Применить</button>
+          <button id="filter-reset" class="secondary focusable" type="button">Сбросить</button>
+          <button id="filter-cancel" class="text-button focusable" type="button">Отмена</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="sort-dialog" class="dialog-backdrop" hidden aria-label="Сортировка поиска">
+      <div class="dialog-card sort-dialog-card">
+        <h2>Сортировка</h2>
+        <div class="sort-options">
+          <button class="sort-option focusable" type="button" data-sort="popular">Популярные</button>
+          <button class="sort-option focusable" type="button" data-sort="rating">Рейтинговые</button>
+          <button class="sort-option focusable" type="button" data-sort="new">Новинки</button>
+        </div>
+        <div class="dialog-actions"><button id="sort-cancel" class="text-button focusable" type="button">Отмена</button></div>
+      </div>
+    </section>
+
+    <section id="server-dialog" class="dialog-backdrop" hidden>
+      <div class="dialog-card">
+        <h2>TorrServer</h2>
+        <label>Адрес<input id="server-url" class="focusable" type="text" value="http://127.0.0.1:8090"></label>
+        <label>Логин<input id="server-user" class="focusable" type="text" placeholder="если включён Basic Auth"></label>
+        <label>Пароль<input id="server-pass" class="focusable" type="password" placeholder="если включён Basic Auth"></label>
+        <p class="server-help">Если TorrServer установлен на этом телевизоре: адрес оставьте <b>http://127.0.0.1:8090</b>. Для TorrServer for webOS логин обычно <b>torrserver</b>, а пароль показывается в самом приложении TorrServer.</p>
+        <p id="server-dialog-status" class="muted"></p>
+        <div class="dialog-actions">
+          <button id="server-test" class="secondary focusable" type="button">Проверить</button>
+          <button id="server-save" class="primary focusable" type="button">Сохранить</button>
+          <button id="server-cancel" class="text-button focusable" type="button">Отмена</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="kinozal-filter-dialog" class="dialog-backdrop" hidden aria-label="Фильтры Кинозал">
+      <div class="dialog-card search-dialog-card kinozal-filter-card">
+        <h2>Кинозал · фильтры топа</h2>
+        <div class="filter-block"><h3>Категория</h3><div id="kinozal-filter-category" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Год выпуска</h3><div id="kinozal-filter-year" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Страна</h3><div id="kinozal-filter-country" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Формат</h3><div id="kinozal-filter-format" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Залит</h3><div id="kinozal-filter-period" class="choice-row"></div></div>
+        <div class="filter-block"><h3>Сортировка</h3><div id="kinozal-filter-sort" class="choice-row"></div></div>
+        <label>Жанр / подборка (необязательно)<input id="kinozal-filter-genre" class="focusable" type="text" placeholder="например: триллер или Netflix"></label>
+        <div class="dialog-actions">
+          <button id="kinozal-filter-apply" class="primary focusable" type="button">Перестроить топ</button>
+          <button id="kinozal-filter-reset" class="secondary focusable" type="button">Сбросить</button>
+          <button id="kinozal-filter-cancel" class="text-button focusable" type="button">Отмена</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="kinozal-account-dialog" class="dialog-backdrop" hidden aria-label="Аккаунт Кинозал">
+      <div class="dialog-card">
+        <h2>Кинозал</h2>
+        <p class="server-help">Seena подключается к локальному Kinozal helper на телевизоре. Cookies обновляются в файле helper и не хранятся в приложении.</p>
+        <p id="kinozal-account-status" class="muted"></p>
+        <div class="dialog-actions">
+          <button id="kinozal-account-test" class="secondary focusable" type="button">Проверить доступ</button>
+          <button id="kinozal-account-save" class="primary focusable" type="button">Закрыть</button>
+          <button id="kinozal-account-cancel" class="text-button focusable" type="button">Назад</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="kinozal-search-dialog" class="dialog-backdrop" hidden aria-label="Поиск раздач Кинозал">
+      <div class="dialog-card kinozal-torrent-card kinozal-search-card">
+        <h2>Kinozal — раздачи по фильму</h2>
+        <p id="kinozal-search-query" class="detail-meta"></p>
+        <p id="kinozal-search-status" class="muted"></p>
+        <div id="kinozal-search-list" class="torrent-list kinozal-torrent-list"></div>
+        <div class="dialog-actions">
+          <button id="kinozal-search-more" class="secondary focusable" type="button" hidden>Показать ещё</button>
+          <button id="kinozal-search-cancel" class="text-button focusable" type="button">Назад</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="kinozal-torrent-dialog" class="dialog-backdrop" hidden aria-label="Выбор раздачи Кинозал">
+      <div class="dialog-card kinozal-torrent-card">
+        <h2>Выберите торрент</h2>
+        <p id="kinozal-torrent-status" class="muted"></p>
+        <div id="kinozal-torrent-list" class="torrent-list kinozal-torrent-list"></div>
+        <div class="dialog-actions"><button id="kinozal-torrent-cancel" class="text-button focusable" type="button">Отмена</button></div>
+      </div>
+    </section>
+
+    <section id="exit-dialog" class="dialog-backdrop" hidden aria-label="Выход из приложения">
+      <div class="dialog-card exit-card">
+        <h2>Выйти из Seena?</h2>
+        <p class="muted">Вы на главной странице. Закрыть приложение?</p>
+        <div class="dialog-actions">
+          <button id="exit-confirm" class="primary focusable" type="button">Выйти</button>
+          <button id="exit-cancel" class="text-button focusable" type="button">Остаться</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+  </div>
+  <script src="model.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

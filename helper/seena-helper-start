@@ -1,0 +1,24 @@
+#!/bin/sh
+ROOT=/var/lib/webosbrew/seena-helper
+if [ ! -f "$ROOT/seena-kinozal-helper.js" ] || [ ! -x "$ROOT/curl-impersonate-a55" ]; then
+    exit 0
+fi
+if [ -x /var/lib/webosbrew/lgvpn/lgvpn-start ]; then
+    (
+        i=0
+        while [ "$i" -lt 12 ]; do
+            if /var/lib/webosbrew/lgvpn/lgvpn-status 2>/dev/null | grep -q '^CONNECTED'; then exit 0; fi
+            /var/lib/webosbrew/lgvpn/lgvpn-start >/dev/null 2>&1 || true
+            if /var/lib/webosbrew/lgvpn/lgvpn-status 2>/dev/null | grep -q '^CONNECTED'; then exit 0; fi
+            i=$((i + 1))
+            sleep 5
+        done
+    ) </dev/null >/dev/null 2>&1 &
+fi
+if /usr/bin/curl -fsS --max-time 2 http://127.0.0.1:8787/health >/dev/null 2>&1; then
+    exit 0
+fi
+SEENA_HELPER_ROOT="$ROOT" SEENA_CURL="$ROOT/curl-impersonate-a55" \
+SEENA_COOKIE_FILE="$ROOT/cookies.json" SEENA_LIB_PATH="$ROOT/armhf-runtime:$ROOT" \
+nohup /usr/bin/node "$ROOT/seena-kinozal-helper.js" </dev/null >/dev/null 2>&1 &
+exit 0
