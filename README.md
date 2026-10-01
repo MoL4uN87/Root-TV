@@ -1,8 +1,8 @@
-# Seena 0.3.9: Kinozal через локальный helper
+# Seena 0.3.10: Kinozal через локальный helper
 
 Целевая система: rooted LG webOS 6.5.x с 32-битным ARM userspace. Приложение обращается к `http://127.0.0.1:8787`; helper запрашивает Kinozal через patched ARMHF `curl-impersonate` 2.2.3 и передаёт `.torrent` в существующий UI Seena, который загружает его в TorrServer на `127.0.0.1:8090`.
 
-В 0.3.9 верхняя строка плеера («К карточке» и название) скрывается вместе с нижними кнопками через 5 секунд воспроизведения без действий. Нажатие кнопки или движение указателя пульта показывает обе панели; при паузе, ошибке и открытом меню дорожек они остаются видимыми.
+В 0.3.9 верхняя строка плеера («К карточке» и название) скрывается вместе с нижними кнопками через 5 секунд воспроизведения без действий. Нажатие кнопки или движение указателя пульта показывает обе панели; при паузе, ошибке и открытом меню дорожек они остаются видимыми. В 0.3.10 Seena повторяет запрос при временном Cloudflare challenge, прежде чем показывать ошибку обновления сессии.
 
 ## Что выяснилось про Cloudflare
 
@@ -17,7 +17,7 @@
 
 | Путь | Назначение |
 | --- | --- |
-| `/media/developer/apps/usr/palm/applications/com.seena.webos` | Seena 0.3.9 |
+| `/media/developer/apps/usr/palm/applications/com.seena.webos` | Seena 0.3.10 |
 | `/var/lib/webosbrew/seena-helper` | helper, patched curl, ARMHF runtime, `cookies.json` с правами `600` |
 | `/home/r/l` | короткая ссылка на ARMHF ELF loader из persistent каталога |
 | `/var/lib/webosbrew/init.d/seena-helper` | штатный Homebrew startup hook для LGVPN и watcher helper |
@@ -33,13 +33,13 @@ Watchdog `seena-helper-watch` проверяет локальный `/health` к
 
 ```powershell
 node --check helper/seena-kinozal-helper.js
-node --check seena-0.3.9/com.seena.webos/app.js
+node --check seena-0.3.10/com.seena.webos/app.js
 node --test 'C:\Users\USER\Documents\ChatGPT\WebOS\build-0.3.7\model.test.cjs'
-ares-package seena-0.3.9/com.seena.webos -o dist
+ares-package seena-0.3.10/com.seena.webos -o dist
 ./install.ps1
 ```
 
-`install.ps1` использует SSH `root@192.168.1.95` и ключ `~/.ssh/lg_webos_codex`; параметры `-Tv` и `-Key` их переопределяют. Он сначала проверяет helper и HTTP 200 к Top, потом копирует 0.3.9 поверх установленного приложения. Архив `dist/com.seena.webos_0.3.9_all.ipk` собирается для хранения; на данном TV `ares-install` недоступен из-за прав на конфигурацию SSH, поэтому установка выполняется по SSH. Для повторной установки сохраните локальную папку `runtime/`: она содержит пропатченный бинарник и ARMHF библиотеки и намеренно не попадает в Git.
+`install.ps1` использует SSH `root@192.168.1.95` и ключ `~/.ssh/lg_webos_codex`; параметры `-Tv` и `-Key` их переопределяют. Он сначала проверяет helper и HTTP 200 к Top, потом копирует 0.3.10 поверх установленного приложения. Архив `dist/com.seena.webos_0.3.10_all.ipk` собирается для хранения; на данном TV `ares-install` недоступен из-за прав на конфигурацию SSH, поэтому установка выполняется по SSH. Для повторной установки сохраните локальную папку `runtime/`: она содержит пропатченный бинарник и ARMHF библиотеки и намеренно не попадает в Git.
 
 После копирования установщик даёт WebView доступ к файлам приложения, завершает уже запущенный процесс Seena и запускает новый. Это нужно при обновлении поверх работающей версии: иначе TV может оставить старую страницу в памяти или показать серый экран.
 
@@ -64,7 +64,7 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/kinozal/top
 
 ## Удаление и откат
 
-Чтобы вернуть прежнюю Seena и убрать helper, сначала остановите его процесс, затем восстановите файлы из `/var/lib/webosbrew/seena-helper/seena-0.3.7-backup` (или локальной папки `backup/seena-tv-0.3.7`). После проверки 0.3.7 удалите только `/var/lib/webosbrew/init.d/seena-helper`, `/home/r/l` и `/var/lib/webosbrew/seena-helper`. Это не требует изменений системных разделов. При удалении одного helper оставленная Seena 0.3.9 потеряет доступ к вкладке Kinozal.
+Чтобы вернуть прежнюю Seena и убрать helper, сначала остановите его процесс, затем восстановите файлы из `/var/lib/webosbrew/seena-helper/seena-0.3.7-backup` (или локальной папки `backup/seena-tv-0.3.7`). После проверки 0.3.7 удалите только `/var/lib/webosbrew/init.d/seena-helper`, `/home/r/l` и `/var/lib/webosbrew/seena-helper`. Это не требует изменений системных разделов. При удалении одного helper оставленная Seena 0.3.10 потеряет доступ к вкладке Kinozal.
 
 Команды для отката (на TV под root через SSH):
 

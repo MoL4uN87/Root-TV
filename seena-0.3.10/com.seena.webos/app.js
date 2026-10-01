@@ -242,10 +242,25 @@
   function decode1251(buffer) { try { return new TextDecoder('windows-1251').decode(buffer); } catch (e) { return new TextDecoder('utf-8').decode(buffer); } }
   async function kinozalResponseText(response) { return decode1251(await response.arrayBuffer()); }
   function isKinozalLoginPage(html) { return /<title>\s*Вход\s*::\s*Кинозал/i.test(html) || /action=["']?\/takelogin\.php/i.test(html) && /name=["']?username/i.test(html); }
+  async function kinozalHelperFetch(url) {
+    for (var attempt = 0; attempt < 4; attempt += 1) {
+      var response;
+      try { response = await fetch(url, { cache: 'no-store' }); }
+      catch (e) {
+        if (attempt < 3) { await sleep(4000); continue; }
+        throw new Error('Локальный helper недоступен');
+      }
+      if (response.status !== 503 || attempt === 3) return response;
+      var error = null;
+      try { error = await response.clone().json(); } catch (e) {}
+      if (!error || error.error !== 'cloudflare_challenge') return response;
+      await sleep(1000 * (attempt + 1));
+    }
+  }
   async function kinozalLogin(force) {
     if (state.kzLoggedIn && !force) return true;
     updateKinozalAuth('Кинозал: проверка helper…', null);
-    var r = await fetch(KZ_HELPER + '/kinozal/cookies/status', { cache: 'no-store' });
+    var r = await kinozalHelperFetch(KZ_HELPER + '/kinozal/cookies/status');
     if (!r.ok) throw new Error('Локальный helper недоступен');
     var status = await r.json();
     if (!status.present) { updateKinozalAuth('Кинозал: нужны cookies', false); throw new Error('Загрузите cookies Kinozal на TV'); }
@@ -256,7 +271,7 @@
     var route = parsed.pathname === '/top.php' ? '/kinozal/top' : parsed.pathname === '/browse.php' ? '/kinozal/search' :
       parsed.pathname === '/details.php' ? '/kinozal/details' : parsed.pathname === '/download.php' ? '/kinozal/torrent' : '';
     if (!route || !/(^|\.)kinozal\.guru$/i.test(parsed.hostname)) throw new Error('Неизвестный адрес Kinozal');
-    var r = await fetch(KZ_HELPER + route + parsed.search, { cache: 'no-store' });
+    var r = await kinozalHelperFetch(KZ_HELPER + route + parsed.search);
     if (!r.ok) {
       var err = null; try { err = await r.json(); } catch (e) {}
       state.kzLoggedIn = false;
