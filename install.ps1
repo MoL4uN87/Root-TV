@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    foreach ($file in @('runtime/curl-impersonate-a55', 'runtime/armhf-runtime/ld-linux-armhf.so.3', 'helper/seena-kinozal-helper.js', 'seena-0.3.8/com.seena.webos/appinfo.json')) {
+    foreach ($file in @('runtime/curl-impersonate-a55', 'runtime/armhf-runtime/ld-linux-armhf.so.3', 'helper/seena-kinozal-helper.js', 'seena-0.3.9/com.seena.webos/appinfo.json')) {
         if (-not (Test-Path -LiteralPath $file)) { throw "Missing $file" }
     }
     if (-not (Test-Path -LiteralPath $Key)) { throw "Missing SSH key: $Key" }
@@ -27,10 +27,10 @@ try {
         CopyToTv 'diagnostics/kinozal-cookies-refresh.json' '/var/lib/webosbrew/seena-helper/cookies.json'
     }
     Remote 'ln -sfn /var/lib/webosbrew/seena-helper/armhf-runtime/ld-linux-armhf.so.3 /home/r/l; chmod 700 /var/lib/webosbrew/seena-helper/curl-impersonate-a55 /var/lib/webosbrew/init.d/seena-helper; test ! -f /var/lib/webosbrew/seena-helper/cookies.json || chmod 600 /var/lib/webosbrew/seena-helper/cookies.json; LD_LIBRARY_PATH=/var/lib/webosbrew/seena-helper/armhf-runtime:/var/lib/webosbrew/seena-helper /var/lib/webosbrew/seena-helper/curl-impersonate-a55 -V >/dev/null 2>&1'
-    Remote "pkill -f '^/usr/bin/node /var/lib/webosbrew/seena-helper/seena-kinozal-helper.js$' || true; /var/lib/webosbrew/init.d/seena-helper; sleep 2; curl -fsS --max-time 30 -o /dev/null http://127.0.0.1:8787/kinozal/top"
-    CopyToTv 'seena-0.3.8/com.seena.webos/.' '/media/developer/apps/usr/palm/applications/com.seena.webos/' $true
+    Remote 'pkill -f ''^/usr/bin/node /var/lib/webosbrew/seena-helper/seena-kinozal-helper.js$'' || true; /var/lib/webosbrew/init.d/seena-helper; i=0; until curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:8787/health 2>/dev/null; do i=$((i+1)); if [ "$i" -ge 20 ]; then exit 1; fi; sleep 1; done; curl -fsS --max-time 30 -o /dev/null http://127.0.0.1:8787/kinozal/top'
+    CopyToTv 'seena-0.3.9/com.seena.webos/.' '/media/developer/apps/usr/palm/applications/com.seena.webos/' $true
     Remote 'luna-send -n 1 -f luna://com.webos.applicationManager/launch "{\"id\":\"com.seena.webos\"}"'
-    Write-Output 'Seena 0.3.8 and persistent Kinozal helper installed.'
+    Write-Output 'Seena 0.3.9 and persistent Kinozal helper installed.'
 } finally {
     Pop-Location
 }

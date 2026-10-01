@@ -538,11 +538,22 @@
   async function testServerDialog() { $('server-dialog-status').textContent = 'Проверка…'; var url = $('server-url').value.replace(/\/$/, ''), user = $('server-user').value, pass = $('server-pass').value; try { var headers = {}; if (user) headers.Authorization = 'Basic ' + btoa(unescape(encodeURIComponent(user + ':' + pass))); var r = await fetch(url + '/echo', { headers: headers }); if (r.status === 401 || r.status === 403) { $('server-dialog-status').textContent = 'Сервер найден, но логин или пароль неверны (HTTP ' + r.status + ').'; return; } if (!r.ok) throw new Error('HTTP ' + r.status); $('server-dialog-status').textContent = 'Подключение успешно: ' + (await r.text()).trim(); } catch (e) { $('server-dialog-status').textContent = 'Нет соединения: ' + e.message; } }
   function saveServerDialog() { localStorage.setItem('seena.torrserver.url', $('server-url').value.replace(/\/$/, '')); localStorage.setItem('seena.torrserver.user', $('server-user').value); localStorage.setItem('seena.torrserver.pass', $('server-pass').value); closeServerDialog(); checkTorrServer(true); toast('Настройки TorrServer сохранены'); }
 
-  function showOsd(focus) { $('player-osd').classList.add('visible'); clearTimeout(state.osdTimer); if (focus) $('player-playpause').focus(); state.osdTimer = setTimeout(function () { if ($('track-menu').hidden) $('player-osd').classList.remove('visible'); }, 5000); }
+  function showOsd(focus) {
+    $('player-top').classList.add('visible');
+    $('player-osd').classList.add('visible');
+    clearTimeout(state.osdTimer);
+    if (focus) $('player-playpause').focus();
+    state.osdTimer = setTimeout(function () {
+      if (!$('track-menu').hidden || $('player').paused || $('player-status').textContent) return;
+      $('player-top').classList.remove('visible');
+      $('player-osd').classList.remove('visible');
+      $('player').focus();
+    }, 5000);
+  }
   function updatePlayButton() { $('player-playpause').textContent = $('player').paused ? '▶ Пуск' : 'Ⅱ Пауза'; }
   function seekBy(seconds) { var v = $('player'); if (!Number.isFinite(v.duration)) return; v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + seconds)); updateProgress(); showOsd(false); }
   function seekToPointer(event) { var v = $('player'); if (!Number.isFinite(v.duration) || v.duration <= 0) return; var bar = $('player-progress'), rect = bar.getBoundingClientRect(); if (!rect.width) return; var ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)); v.currentTime = ratio * v.duration; updateProgress(); showOsd(false); }
-  function stopPlayer() { var v = $('player'); v.pause(); v.removeAttribute('src'); v.load(); $('player-view').hidden = true; $('track-menu').hidden = true; if (!$('detail-view').hidden) $('play-now').focus(); else if (!$('kinozal-detail-view').hidden) $('kinozal-watch').focus(); }
+  function stopPlayer() { var v = $('player'); clearTimeout(state.osdTimer); v.pause(); v.removeAttribute('src'); v.load(); $('player-view').hidden = true; $('track-menu').hidden = true; if (!$('detail-view').hidden) $('play-now').focus(); else if (!$('kinozal-detail-view').hidden) $('kinozal-watch').focus(); }
   function playSource(source) {
     state.playerSource = source; var video = $('player'); $('player-view').hidden = false; var playTitle = state.detailItem ? state.detailItem.title : state.kzDetail ? state.kzDetail.title : 'Видео'; $('player-title').textContent = playTitle + ' · ' + source.label; $('player-status').textContent = 'Подключение…';
     video.pause(); video.removeAttribute('src'); while (video.firstChild) video.removeChild(video.firstChild); video.load(); video.src = source.url; video.load(); var promise = video.play(); if (promise && promise.catch) promise.catch(function () { $('player-status').textContent = 'Не удалось запустить поток. Попробуйте другой источник.'; }); showOsd(true); updatePlayButton();
@@ -557,7 +568,7 @@
       if (!texts || !texts.length) { var pp = document.createElement('p'); pp.className = 'muted'; pp.textContent = 'В потоке нет WebVTT/textTracks, доступных webOS.'; list.appendChild(pp); }
       else Array.prototype.forEach.call(texts, function (track, index) { var b2 = makeButton(track.label || track.language || 'Субтитры ' + (index + 1), 'track-option' + (track.mode === 'showing' ? ' active' : ''), function () { Array.prototype.forEach.call(texts, function (x, i) { x.mode = i === index ? 'showing' : 'disabled'; }); openTrackMenu('subs'); }); list.appendChild(b2); });
     }
-    var first = list.querySelector('button'); if (first) first.focus(); clearTimeout(state.osdTimer); $('player-osd').classList.add('visible');
+    var first = list.querySelector('button'); if (first) first.focus(); clearTimeout(state.osdTimer); $('player-top').classList.add('visible'); $('player-osd').classList.add('visible');
   }
   function closeTrackMenu() { $('track-menu').hidden = true; $('player-playpause').focus(); showOsd(false); }
   function updateProgress() {
@@ -566,7 +577,7 @@
     if (finite && v.buffered && v.buffered.length) { try { var end = 0; for (var i = 0; i < v.buffered.length; i += 1) { if (v.buffered.start(i) <= v.currentTime + 1 && v.buffered.end(i) >= v.currentTime) { end = v.buffered.end(i); break; } if (v.buffered.end(i) > end) end = v.buffered.end(i); } buffered = Math.max(0, Math.min(100, end / v.duration * 100)); bufferAhead = Math.max(0, end - v.currentTime); } catch (e) { buffered = 0; bufferAhead = 0; } }
     $('player-progress-buffer').style.width = buffered + '%'; $('player-buffer-info').textContent = 'Буфер +' + formatTime(bufferAhead);
   }
-  function setBuffering(active, text) { var el = $('player-buffer-info'); el.classList.toggle('buffering', active); if (active) { $('player-status').textContent = text || 'Буферизация…'; el.textContent = 'Буферизация…'; showOsd(false); } else if ($('player-status').textContent === 'Буферизация…' || $('player-status').textContent === 'Ожидание данных…') { $('player-status').textContent = ''; updateProgress(); } }
+  function setBuffering(active, text) { var el = $('player-buffer-info'); el.classList.toggle('buffering', active); if (active) { $('player-status').textContent = text || 'Буферизация…'; el.textContent = 'Буферизация…'; showOsd(false); } else if ($('player-status').textContent === 'Буферизация…' || $('player-status').textContent === 'Ожидание данных…') { $('player-status').textContent = ''; updateProgress(); showOsd(false); } }
 
   function openExitDialog() {
     $('exit-dialog').hidden = false;
