@@ -270,7 +270,7 @@
     var parsed = new URL(path, kinozalSettings().base);
     var route = parsed.pathname === '/top.php' ? '/kinozal/top' : parsed.pathname === '/browse.php' ? '/kinozal/search' :
       parsed.pathname === '/details.php' ? '/kinozal/details' : parsed.pathname === '/download.php' ? '/kinozal/torrent' : '';
-    if (!route || !/(^|\.)kinozal\.guru$/i.test(parsed.hostname)) throw new Error('Неизвестный адрес Kinozal');
+    if (!route || !/^(kinozal\.guru|kinozal\.jumpingcrab\.com)$/i.test(parsed.hostname)) throw new Error('Неизвестный адрес Kinozal');
     var r = await kinozalHelperFetch(KZ_HELPER + route + parsed.search);
     if (!r.ok) {
       var err = null; try { err = await r.json(); } catch (e) {}
@@ -287,7 +287,7 @@
     state.kzLoggedIn = true; updateKinozalAuth('Кинозал: helper готов', true); return html;
   }
   function kzDoc(html) { return new DOMParser().parseFromString(html, 'text/html'); }
-  function kzAbs(url, base) { try { var absolute = new URL(url, base || kinozalSettings().base); return /(^|\.)kinozal\.guru$/i.test(absolute.hostname) ? KZ_HELPER + '/kinozal/image?url=' + encodeURIComponent(absolute.href) : absolute.href; } catch (e) { return url || ''; } }
+  function kzAbs(url, base) { try { var absolute = new URL(url, base || kinozalSettings().base); return /^(kinozal\.guru|kinozal\.jumpingcrab\.com)$/i.test(absolute.hostname) ? KZ_HELPER + '/kinozal/image?url=' + encodeURIComponent(absolute.href) : absolute.href; } catch (e) { return url || ''; } }
   function kzIdFromHref(href) { var m = String(href || '').match(/[?&]id=(\d+)/); return m ? m[1] : ''; }
   function kzClean(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
   function parseKinozalTop(html) {
@@ -318,7 +318,7 @@
   }
   async function loadKinozal(append) {
     if (state.kzLoading) return; state.kzLoading = true; showBase('kinozal'); var page = append ? state.kzPage + 1 : 0;
-    if (!append) { state.kzItems = []; state.kzPage = 0; state.kzLastPage = 0; clear($('kinozal-grid')); $('kinozal-message').textContent = 'Загрузка топа…'; $('kinozal-more').hidden = true; }
+    if (!append) { state.kzLoaded = false; state.kzItems = []; state.kzPage = 0; state.kzLastPage = 0; clear($('kinozal-grid')); $('kinozal-message').textContent = 'Загрузка топа…'; $('kinozal-more').hidden = true; }
     try {
       if (!state.kzLoggedIn) await kinozalLogin(false); var html = await kinozalGet(kinozalTopPath(page), false); var parsed = parseKinozalTop(html);
       parsed.items.forEach(function (item) { $('kinozal-grid').appendChild(renderKinozalCard(item)); }); state.kzItems = append ? state.kzItems.concat(parsed.items) : parsed.items; state.kzPage = page; state.kzLastPage = parsed.lastPage; state.kzLoaded = true;
@@ -337,6 +337,28 @@
   async function applyKinozalFilter() { state.kzFilters.genre = $('kinozal-filter-genre').value.trim(); closeKinozalFilter(); await loadKinozal(false); }
   function openKinozalAccount() { $('kinozal-account-status').textContent = ''; $('kinozal-account-dialog').hidden = false; $('kinozal-account-test').focus(); }
   function closeKinozalAccount() { $('kinozal-account-dialog').hidden = true; $('kinozal-account-open').focus(); }
+  async function refreshKinozalSession() {
+    var button = $('kinozal-session-refresh');
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = 'Проверка…';
+    updateKinozalAuth('Кинозал: проверка адресов…', null);
+    try {
+      var response = await fetch(KZ_HELPER + '/kinozal/session/refresh', { cache: 'no-store' });
+      var result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Не удалось восстановить доступ к Кинозалу');
+      state.kzLoggedIn = true;
+      await loadKinozal(false);
+      if (state.kzLoaded) updateKinozalAuth(result.source === 'mirror' ? 'Кинозал: зеркало подключено' : 'Кинозал: доступен', true);
+    } catch (e) {
+      $('kinozal-message').textContent = 'Кинозал недоступен: ' + e.message;
+      updateKinozalAuth('Кинозал: ошибка', false);
+      toast(e.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Обновить сессию';
+    }
+  }
   function saveKinozalAccount() { closeKinozalAccount(); }
   async function testKinozalAccount() { state.kzLoggedIn = false; $('kinozal-account-status').textContent = 'Проверка helper…'; try { await kinozalLogin(true); await kinozalGet('/top.php?t=0&d=0&f=0&c=0&k=0&j=&s=0&w=0&page=0', false); $('kinozal-account-status').textContent = 'Kinozal доступен через helper.'; } catch (e) { $('kinozal-account-status').textContent = e.message; } }
   function kinozalSearchQuality(full) {
@@ -649,7 +671,7 @@
   });
 
   $('search-open').addEventListener('click', function () { showBase('search'); if (!state.searchItems.length || state.searchMode !== 'catalog') loadDiscovery(false, false); else $('search-input').focus(); }); $('search-form').addEventListener('submit', function (event) { event.preventDefault(); search($('search-input').value); }); $('filter-open').addEventListener('click', openFilterDialog); $('sort-open').addEventListener('click', openSortDialog); $('filter-apply').addEventListener('click', applyFilters); $('filter-reset').addEventListener('click', resetFilters); $('filter-cancel').addEventListener('click', closeFilterDialog); $('sort-cancel').addEventListener('click', closeSortDialog); Array.from(document.querySelectorAll('.sort-option')).forEach(function (b) { b.addEventListener('click', function () { chooseSort(b.dataset.sort); }); }); $('search-load-more').addEventListener('click', function () { loadDiscovery(true, false); }); $('load-more').addEventListener('click', function () { loadCatalog(state.catalog, true); });
-  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
   $('detail-back').addEventListener('click', back); $('person-back').addEventListener('click', closePerson); $('player-back').addEventListener('click', back); $('play-now').addEventListener('click', chooseSource); $('torrents-open').addEventListener('click', openTorrents); $('detail-kinozal').addEventListener('click', openKinozalSearch); $('kinozal-search-more').addEventListener('click', function(){loadKinozalSearch(true);}); $('kinozal-search-cancel').addEventListener('click', closeKinozalSearch); $('torrent-close').addEventListener('click', closeTorrents); $('favorite-toggle').addEventListener('click', toggleFavorite);
   $('torrserver-settings').addEventListener('click', openServerDialog); $('server-cancel').addEventListener('click', closeServerDialog); $('server-test').addEventListener('click', testServerDialog); $('server-save').addEventListener('click', saveServerDialog);
   $('exit-cancel').addEventListener('click', closeExitDialog); $('exit-confirm').addEventListener('click', exitApp);

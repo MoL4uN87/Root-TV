@@ -12,6 +12,8 @@ var cookieFile = process.env.SEENA_COOKIE_FILE || path.join(root, 'cookies.json'
 var libPath = process.env.SEENA_LIB_PATH || path.join(root, 'armhf-runtime') + ':' + root;
 var port = Number(process.env.SEENA_HELPER_PORT || 8787);
 var ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 YaBrowser/26.8.0.0 Safari/537.36';
+var hosts = ['https://kinozal.guru', 'https://kinozal.jumpingcrab.com'];
+var activeHost = hosts[1];
 
 function json(res, status, object) {
   var body = Buffer.from(JSON.stringify(object), 'utf8');
@@ -21,25 +23,27 @@ function json(res, status, object) {
   res.end(body);
 }
 
-function cookieHeader() {
+function cookieHeader(host) {
   var data = JSON.parse(fs.readFileSync(cookieFile, 'utf8'));
-  var names = ['uid', 'pass', 'cf_clearance'];
+  var names = host === hosts[0] ? ['uid', 'pass', 'cf_clearance'] : ['uid', 'pass'];
   if (!names.every(function (name) { return typeof data[name] === 'string' && data[name]; })) throw new Error('cookies_missing');
   var value = names.map(function (name) { return name + '=' + data[name]; }).join('; ');
   if (/[\r\n"]/.test(value)) throw new Error('cookies_invalid');
   return value;
 }
 
-function upstream(route, params) {
+function upstream(route, params, host) {
   var target;
-  if (route === '/kinozal/top') target = new URL('https://kinozal.guru/top.php');
-  else if (route === '/kinozal/search') target = new URL('https://kinozal.guru/browse.php');
-  else if (route === '/kinozal/details') target = new URL('https://kinozal.guru/details.php');
-  else if (route === '/kinozal/torrent') target = new URL('https://kinozal.guru/download.php');
+  if (route === '/kinozal/top') target = new URL(host + '/top.php');
+  else if (route === '/kinozal/search') target = new URL(host + '/browse.php');
+  else if (route === '/kinozal/details') target = new URL(host + '/details.php');
+  else if (route === '/kinozal/torrent') target = new URL(host + '/download.php');
   else if (route === '/kinozal/image') {
     try { target = new URL(params.get('url') || ''); }
     catch (_) { return false; }
-    if (target.protocol !== 'https:' || !/(^|\.)kinozal\.guru$/i.test(target.hostname)) return false;
+    if (target.protocol !== 'https:' || target.port || target.username || target.password ||
+        hosts.every(function (known) { return target.hostname !== new URL(known).hostname; })) return false;
+    target.hostname = new URL(host).hostname;
     return target.href;
   }
   else return null;
@@ -94,6 +98,33 @@ function fetchWithRetry(url, cookie, attempt, callback) {
   });
 }
 
+function challenged(result) {
+  if (!result) return false;
+  if (result.status === 403) return true;
+  if (result.status !== 200) return false;
+  var prefix = result.body.slice(0, 8192).toString('latin1');
+  return /cf-chl-|cf-mitigated|takelogin\.php/i.test(prefix);
+}
+
+function fetchRoute(route, params, host, fallback, callback) {
+  var target = upstream(route, params, host);
+  if (target === null || target === false) return callback(null, null, host, target);
+  var cookie;
+  try { cookie = cookieHeader(host); }
+  catch (_) {
+    if (fallback && host === hosts[0]) return fetchRoute(route, params, hosts[1], false, callback);
+    return callback(new Error('cookies_missing'), null, host);
+  }
+  fetchWithRetry(target, cookie, 1, function (error, result) {
+    if (fallback && (error || challenged(result) || result.status !== 200)) {
+      var other = host === hosts[0] ? hosts[1] : hosts[0];
+      return fetchRoute(route, params, other, false, callback);
+    }
+    if (route !== '/kinozal/image' && !error && result && result.status === 200 && !challenged(result)) activeHost = host;
+    callback(error, result, host);
+  });
+}
+
 function connectionError() {
   var status = child.spawnSync('/var/lib/webosbrew/lgvpn/lgvpn-status', [], { encoding: 'utf8', timeout: 2000 });
   if (!status.error && /^DISCONNECTED\b/.test(status.stdout || ''))
@@ -109,23 +140,27 @@ http.createServer(function (req, res) {
   catch (_) { return json(res, 400, { error: 'invalid_url' }); }
   if (request.pathname === '/health') return json(res, 200, { status: 'ok' });
   if (request.pathname === '/kinozal/cookies/status') {
-    try { cookieHeader(); return json(res, 200, { present: true }); }
+    try { cookieHeader(activeHost); return json(res, 200, { present: true }); }
     catch (_) { return json(res, 200, { present: false }); }
   }
-  var target = upstream(request.pathname, request.searchParams);
+  if (request.pathname === '/kinozal/session/refresh') {
+    return fetchRoute('/kinozal/top', new URL('http://127.0.0.1/').searchParams, hosts[1], true, function (error, result, host) {
+      if (error) return json(res, 502, { error: 'upstream_connection', message: 'Не удалось проверить зеркала Кинозала.' });
+      if (challenged(result) || !result || result.status !== 200 || result.body.indexOf(Buffer.from('details.php?id=')) < 0)
+        return json(res, 503, { error: 'session_unavailable', message: 'Оба адреса Кинозала требуют новую сессию.' });
+      activeHost = host;
+      return json(res, 200, { status: 'ok', source: host === hosts[1] ? 'mirror' : 'primary' });
+    });
+  }
+  var target = upstream(request.pathname, request.searchParams, activeHost);
   if (target === null) return json(res, 404, { error: 'not_found' });
   if (target === false) return json(res, 400, { error: 'invalid_request' });
-  var cookie;
-  try { cookie = cookieHeader(); }
-  catch (_) { return json(res, 503, { error: 'cookies_missing', message: 'Обновите cookies Kinozal на TV.' }); }
-  fetchWithRetry(target, cookie, 1, function (error, result) {
+  fetchRoute(request.pathname, request.searchParams, activeHost, true, function (error, result) {
+    if (error && error.message === 'cookies_missing') return json(res, 503, { error: 'cookies_missing', message: 'Обновите cookies Kinozal на TV.' });
     if (error) return json(res, 502, error.message === 'upstream_connection' ? connectionError() :
       { error: error.message, message: 'Не удалось подключиться к Kinozal.' });
-    if (result.status === 403) return json(res, 503, { error: 'cloudflare_challenge', message: 'Cloudflare требует обновить сессию Kinozal.' });
+    if (challenged(result)) return json(res, 503, { error: 'cloudflare_challenge', message: 'Cloudflare требует обновить сессию Kinozal.' });
     if (result.status !== 200) return json(res, 502, { error: 'upstream_http', status: result.status });
-    var prefix = result.body.slice(0, 8192).toString('latin1');
-    if (/cf-chl-|cf-mitigated/i.test(prefix)) return json(res, 503, { error: 'cloudflare_challenge', message: 'Cloudflare требует обновить сессию Kinozal.' });
-    if (/takelogin\.php/i.test(prefix)) return json(res, 503, { error: 'kinozal_login_required', message: 'Kinozal требует обновить авторизацию.' });
     var torrent = request.pathname === '/kinozal/torrent';
     var image = request.pathname === '/kinozal/image';
     if (torrent && (result.body[0] !== 0x64 || result.body.indexOf(Buffer.from('4:info')) < 0))
