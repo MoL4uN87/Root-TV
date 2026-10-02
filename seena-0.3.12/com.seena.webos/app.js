@@ -442,7 +442,7 @@
   }
   function closeKinozalTorrents(){ $('kinozal-torrent-dialog').hidden=true; $('kinozal-watch').focus(); }
   async function uploadKinozalTorrent(release, context) {
-    var ctx=context||state.kzDetail||{}, s=kinozalSettings(), url=s.base.replace('://','://dl.') + '/download.php?id=' + encodeURIComponent(release.id); var buf=await kinozalGet(url,true); var blob=new Blob([buf],{type:'application/x-bittorrent'}); var fd=new FormData(); fd.append('file',blob,'kinozal-'+release.id+'.torrent'); fd.append('title',release.title||ctx.title||'Kinozal'); fd.append('poster',ctx.poster||''); fd.append('category',ctx.mediaType==='tv'?'tv':'movie');
+    var ctx=context||state.kzDetail||{}, url='/download.php?id=' + encodeURIComponent(release.id); var buf=await kinozalGet(url,true); var blob=new Blob([buf],{type:'application/x-bittorrent'}); var fd=new FormData(); fd.append('file',blob,'kinozal-'+release.id+'.torrent'); fd.append('title',release.title||ctx.title||'Kinozal'); fd.append('poster',ctx.poster||''); fd.append('category',ctx.mediaType==='tv'?'tv':'movie');
     var srv=serverSettings(), headers={},auth=serverAuthHeader(srv);if(auth)headers.Authorization=auth; var r=await fetch(srv.url+'/torrent/upload',{method:'POST',headers:headers,body:fd});if(!r.ok)throw new Error('TorrServer HTTP '+r.status);var st=await r.json();if(Array.isArray(st))st=st[0];if(!st||!st.hash)throw new Error('TorrServer не принял .torrent');
     for(var i=0;i<40&&(!st.file_stats||!st.file_stats.length);i+=1){await sleep(650);var q=await serverFetch('/torrents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',hash:st.hash})});if(q.ok)st=await q.json();} return st;
   }
