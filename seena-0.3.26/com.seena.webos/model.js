@@ -257,6 +257,31 @@
     return BASE + 'person/' + encodeURIComponent(id) + '/credits?limit=' + (limit || 60) + '&offset=' + (offset || 0);
   }
 
+  function kinozalSearchTitle(value) {
+    return String(value || '').split(/\s+\/\s+/)[0]
+      .replace(/\s*\((?:19|20)\d{2}[^)]*\)\s*$/i, '').trim();
+  }
+
+  function normalizedTitle(value) {
+    return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, '');
+  }
+
+  function bestCatalogMatch(response, title, year, mediaType) {
+    var wanted = normalizedTitle(title), wantedYear = String(year || '').match(/(?:19|20)\d{2}/);
+    var ranked = catalogItems(response).map(function (item) {
+      var raw = item.raw || {}, names = [item.title, raw.original_title, raw.original_name].map(normalizedTitle).filter(Boolean);
+      var score = names.reduce(function (best, name) {
+        if (name === wanted) return Math.max(best, 100);
+        if (wanted && (name.indexOf(wanted) !== -1 || wanted.indexOf(name) !== -1)) return Math.max(best, 50);
+        return best;
+      }, 0);
+      if (wantedYear && item.year === wantedYear[0]) score += 25;
+      if (mediaType && item.mediaType === mediaType) score += 10;
+      return { item: item, score: score };
+    }).sort(function (a, b) { return b.score - a.score; });
+    return ranked.length && ranked[0].score >= 50 ? ranked[0].item : null;
+  }
+
   return {
     BASE: BASE,
     imageUrl: imageUrl,
@@ -277,6 +302,8 @@
     torrentsUrl: torrentsUrl,
     bestTorrentUrl: bestTorrentUrl,
     personUrl: personUrl,
-    personCreditsUrl: personCreditsUrl
+    personCreditsUrl: personCreditsUrl,
+    kinozalSearchTitle: kinozalSearchTitle,
+    bestCatalogMatch: bestCatalogMatch
   };
 }));

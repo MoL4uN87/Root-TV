@@ -606,9 +606,26 @@
     var year = parseField(infoHtml,'Год выпуска:') || (title.match(/\b(?:19|20)\d{2}(?:-(?:19|20)\d{2})?\b/)||[''])[0];
     return { id:id, title:title, poster:kzAbs(posterUrl,kinozalSettings().base), year:year, genres:parseField(infoHtml,'Жанр:'), country:parseField(infoHtml,'Выпущено:'), director:parseField(infoHtml,'Режиссер:'), cast:parseField(infoHtml,'В ролях:'), overview:overview||'Описание отсутствует', quality:parseField(techHtml,'Качество:'), video:parseField(techHtml,'Видео:'), audio:parseField(techHtml,'Аудио:'), size:parseField(techHtml,'Размер:'), duration:parseField(techHtml,'Продолжительность:'), language:parseField(techHtml,'Язык:'), imdb:rx(/IMDb\s*([0-9.]+)/i), kp:rx(/Кинопоиск\s*([0-9.]+)/i), variants:variants, mediaType:/сезон|серии/i.test(title)?'tv':'movie' };
   }
+  async function loadKinozalCast(detail) {
+    var section = $('kinozal-credits-section'), list = $('kinozal-cast-list'), note = $('kinozal-cast-note');
+    section.hidden = false; clear(list); note.textContent = 'Подбираем карточки актёров…';
+    try {
+      var query = model.kinozalSearchTitle(detail.title); if (!query) throw new Error('Название не найдено');
+      var searchResult = await fetchJson(model.searchUrl(query));
+      var match = model.bestCatalogMatch(searchResult, query, detail.year, detail.mediaType);
+      if (!match) throw new Error('Фильм не найден в каталоге');
+      var catalogDetail = await fetchJson(model.detailUrl(match.id));
+      if ($('kinozal-detail-view').hidden || state.kzDetail !== detail) return;
+      var cast = model.castItems(catalogDetail).slice(0, 24);
+      appendCastCards(cast, list);
+      note.textContent = cast.length ? 'Выберите актёра, чтобы открыть его карточку и фильмографию.' : 'Карточки актёров для этой раздачи не найдены.';
+    } catch (_) {
+      if (!$('kinozal-detail-view').hidden && state.kzDetail === detail) note.textContent = 'Карточки актёров для этой раздачи не найдены.';
+    }
+  }
   async function openKinozalDetail(item, trigger) {
-    state.kzDetailTrigger = trigger || null; state.kzDetail = null; $('kinozal-detail-view').hidden = false; $('kinozal-detail-title').textContent = item.fullTitle || item.title; $('kinozal-detail-meta').textContent = item.year || ''; $('kinozal-detail-genres').textContent = ''; $('kinozal-detail-overview').textContent = 'Загрузка карточки…'; $('kinozal-tech').textContent = ''; $('kinozal-release-info').textContent = ''; clear($('kinozal-detail-badges')); if (safeImage(item.poster)) setImage($('kinozal-detail-poster'), item.poster); else $('kinozal-detail-poster').removeAttribute('src'); $('kinozal-detail-back').focus();
-    try { var html = await kinozalGet('/details.php?id=' + encodeURIComponent(item.id), false); var d = parseKinozalDetail(html,item); state.kzDetail=d; $('kinozal-detail-title').textContent=d.title; $('kinozal-detail-meta').textContent=[d.year,d.country,d.duration].filter(Boolean).join(' · '); $('kinozal-detail-genres').textContent=d.genres; $('kinozal-detail-overview').textContent=d.overview; if(safeImage(d.poster))setImage($('kinozal-detail-poster'),d.poster); clear($('kinozal-detail-badges')); function kb(t,k){if(!t)return;var x=document.createElement('span');x.className='detail-badge '+(k||'');x.textContent=t;$('kinozal-detail-badges').appendChild(x);} if(d.kp)kb('КП '+d.kp,'rating'); if(d.imdb)kb('IMDb '+d.imdb,'imdb'); if(d.quality)kb(d.quality,''); $('kinozal-tech').textContent=[d.quality&&('Качество: '+d.quality),d.video&&('Видео: '+d.video),d.audio&&('Аудио: '+d.audio),d.language&&('Язык: '+d.language),d.size&&('Размер: '+d.size),d.duration&&('Продолжительность: '+d.duration)].filter(Boolean).join('\n'); $('kinozal-release-info').textContent=[d.director&&('Режиссёр: '+d.director),d.cast&&('В ролях: '+d.cast)].filter(Boolean).join('\n'); }
+    state.kzDetailTrigger = trigger || null; state.kzDetail = null; $('kinozal-detail-view').hidden = false; $('kinozal-detail-title').textContent = item.fullTitle || item.title; $('kinozal-detail-meta').textContent = item.year || ''; $('kinozal-detail-genres').textContent = ''; $('kinozal-detail-overview').textContent = 'Загрузка карточки…'; $('kinozal-tech').textContent = ''; $('kinozal-release-info').textContent = ''; clear($('kinozal-detail-badges')); clear($('kinozal-cast-list')); $('kinozal-credits-section').hidden = true; $('kinozal-cast-note').textContent = ''; if (safeImage(item.poster)) setImage($('kinozal-detail-poster'), item.poster); else $('kinozal-detail-poster').removeAttribute('src'); $('kinozal-detail-back').focus();
+    try { var html = await kinozalGet('/details.php?id=' + encodeURIComponent(item.id), false); var d = parseKinozalDetail(html,item); state.kzDetail=d; $('kinozal-detail-title').textContent=d.title; $('kinozal-detail-meta').textContent=[d.year,d.country,d.duration].filter(Boolean).join(' · '); $('kinozal-detail-genres').textContent=d.genres; $('kinozal-detail-overview').textContent=d.overview; if(safeImage(d.poster))setImage($('kinozal-detail-poster'),d.poster); clear($('kinozal-detail-badges')); function kb(t,k){if(!t)return;var x=document.createElement('span');x.className='detail-badge '+(k||'');x.textContent=t;$('kinozal-detail-badges').appendChild(x);} if(d.kp)kb('КП '+d.kp,'rating'); if(d.imdb)kb('IMDb '+d.imdb,'imdb'); if(d.quality)kb(d.quality,''); $('kinozal-tech').textContent=[d.quality&&('Качество: '+d.quality),d.video&&('Видео: '+d.video),d.audio&&('Аудио: '+d.audio),d.language&&('Язык: '+d.language),d.size&&('Размер: '+d.size),d.duration&&('Продолжительность: '+d.duration)].filter(Boolean).join('\n'); $('kinozal-release-info').textContent=[d.director&&('Режиссёр: '+d.director),d.cast&&('В ролях: '+d.cast)].filter(Boolean).join('\n'); loadKinozalCast(d); }
     catch(e){$('kinozal-detail-overview').textContent='Не удалось загрузить карточку: '+e.message;toast(e.message);}
   }
   function closeKinozalDetail() { $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
@@ -635,14 +652,17 @@
     var meta = []; if (facts.year) meta.push(facts.year); meta.push(facts.mediaType === 'tv' ? 'Сериал' : 'Фильм'); if (facts.runtime) meta.push(formatRuntime(facts.runtime)); if (facts.countries.length) meta.push(facts.countries.join(', ')); if (facts.voteCount) meta.push(formatVotes(facts.voteCount) + ' оценок');
     $('detail-meta').textContent = meta.join(' · '); $('detail-genres').textContent = facts.genres.length ? facts.genres.join(' • ') : '';
   }
-  function renderCast(detail) {
-    var cast = model.castItems(detail).slice(0, 24); var list = $('cast-list'); clear(list); $('credits-section').hidden = !cast.length;
+  function appendCastCards(cast, list) {
     cast.forEach(function (person) {
       var card = document.createElement('button'); card.type = 'button'; card.className = 'cast-card focusable';
       var img = document.createElement('img'); img.alt = ''; img.loading = 'lazy'; if (safeImage(person.photo)) setImage(img, person.photo);
       var copy = document.createElement('div'); var strong = document.createElement('strong'); strong.textContent = person.name; var small = document.createElement('small'); small.textContent = person.role;
       copy.append(strong, small); card.append(img, copy); card.addEventListener('click', function () { openPerson(person, card); }); list.appendChild(card);
     });
+  }
+  function renderCast(detail) {
+    var cast = model.castItems(detail).slice(0, 24); var list = $('cast-list'); clear(list); $('credits-section').hidden = !cast.length;
+    appendCastCards(cast, list);
   }
   function renderSimilar(detail) { var items = model.similarItems(detail).slice(0, 14); var grid = $('similar-grid'); clear(grid); $('similar-section').hidden = !items.length; items.forEach(function (item) { grid.appendChild(renderCard(item)); }); }
 
