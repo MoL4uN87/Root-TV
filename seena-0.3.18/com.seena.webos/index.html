@@ -12,6 +12,7 @@
       <div class="brand"><img src="seena.svg" alt="Seena"><span>для webOS</span></div>
       <nav id="catalog-nav" aria-label="Каталоги"></nav>
       <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
+      <button id="history-open" class="nav-action focusable" type="button">История</button>
       <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
     </header>
 
@@ -36,6 +37,14 @@
         <p id="search-message" class="muted">Фильтры и сортировка работают без ввода названия.</p>
         <div id="search-grid" class="poster-grid"></div>
         <button id="search-load-more" class="more focusable" type="button" hidden>Показать ещё</button>
+      </section>
+    </main>
+
+    <main id="history-view" class="view" hidden>
+      <section class="search-section">
+        <div class="section-head"><h1>История просмотров</h1><p id="history-count" class="muted"></p></div>
+        <p id="history-message" class="muted">Здесь появятся фильмы и раздачи после начала воспроизведения.</p>
+        <div id="history-grid" class="poster-grid history-grid"></div>
       </section>
     </main>
 
@@ -305,6 +314,7 @@
     <div id="toast" role="status" aria-live="polite"></div>
   </div>
   <script src="model.js"></script>
+  <script src="history.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
