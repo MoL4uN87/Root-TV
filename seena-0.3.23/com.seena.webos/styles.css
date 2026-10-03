@@ -83,7 +83,7 @@
 .history-grid{margin-top:26px}
 .history-entry{min-width:0;display:flex;flex-direction:column;gap:10px}
 .history-entry .poster-card{width:100%;flex:1}
-.history-remove{border:1px solid #6b3f50;background:#2b1a27;color:#f6d9e2;border-radius:10px;padding:11px 12px;font-size:17px}
+.history-remove{border:1px solid #6b3f50;background:#2b1a27;color:#f6d9e2;border-radius:10px;padding:11px 12px;font-size:17px;margin-top:12px}
 
 /* Keep the remote focus highlight inside the scrolling navigation row. */
 .topbar .nav-item,.topbar .nav-action{transition:background-color .15s ease,box-shadow .15s ease,color .15s ease}
