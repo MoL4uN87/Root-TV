@@ -252,11 +252,16 @@
     </section>
 
     <section id="kinozal-account-dialog" class="dialog-backdrop" hidden aria-label="Аккаунт Кинозал">
-      <div class="dialog-card">
+      <div class="dialog-card kinozal-account-card">
         <h2>Кинозал</h2>
-        <p class="server-help">Seena подключается к локальному Kinozal helper на телевизоре. Cookies обновляются в файле helper и не хранятся в приложении.</p>
+        <p class="server-help">Войдите в Kinozal прямо на телевизоре. Пароль передаётся только локальному helper и по HTTPS на зеркало Kinozal. При выборе «Запомнить» helper сохранит пароль в закрытом для других пользователей файле на TV, чтобы кнопка могла повторить вход автоматически.</p>
+        <label>Логин<input id="kinozal-account-user" class="focusable" type="text" autocomplete="off"></label>
+        <label>Пароль<input id="kinozal-account-pass" class="focusable" type="password" autocomplete="off"></label>
+        <div id="kinozal-account-keyboard" class="kinozal-keyboard" hidden aria-label="Экранная клавиатура Seena"></div>
+        <button id="kinozal-account-remember" class="secondary focusable" type="button" aria-pressed="false">Запомнить пароль: нет</button>
         <p id="kinozal-account-status" class="muted"></p>
         <div class="dialog-actions">
+          <button id="kinozal-account-login" class="primary focusable" type="button">Войти на TV</button>
           <button id="kinozal-account-test" class="secondary focusable" type="button">Проверить доступ</button>
           <button id="kinozal-account-save" class="primary focusable" type="button">Закрыть</button>
           <button id="kinozal-account-cancel" class="text-button focusable" type="button">Назад</button>

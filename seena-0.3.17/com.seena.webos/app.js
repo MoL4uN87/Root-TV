@@ -241,7 +241,7 @@
   function updateKinozalAuth(text, ok) { var el = $('kinozal-auth-status'); el.textContent = text; el.className = 'server-status ' + (ok === true ? 'kinozal-auth-ok' : ok === false ? 'kinozal-auth-bad' : ''); }
   function decode1251(buffer) { try { return new TextDecoder('windows-1251').decode(buffer); } catch (e) { return new TextDecoder('utf-8').decode(buffer); } }
   async function kinozalResponseText(response) { return decode1251(await response.arrayBuffer()); }
-  function isKinozalLoginPage(html) { return /<title>\s*Вход\s*::\s*Кинозал/i.test(html) || /action=["']?\/takelogin\.php/i.test(html) && /name=["']?username/i.test(html); }
+  function isKinozalLoginPage(html) { return /<title>\s*Вход\s*::\s*Кинозал/i.test(html); }
   async function kinozalHelperFetch(url) {
     for (var attempt = 0; attempt < 4; attempt += 1) {
       var response;
@@ -335,8 +335,83 @@
   function closeKinozalFilter() { $('kinozal-filter-dialog').hidden = true; $('kinozal-filter-open').focus(); }
   function resetKinozalFilter() { state.kzFilters = { category: '0', year: '0', country: '0', format: '0', period: '0', sort: '0', genre: '' }; buildKinozalFilters(); }
   async function applyKinozalFilter() { state.kzFilters.genre = $('kinozal-filter-genre').value.trim(); closeKinozalFilter(); await loadKinozal(false); }
-  function openKinozalAccount() { $('kinozal-account-status').textContent = ''; $('kinozal-account-dialog').hidden = false; $('kinozal-account-test').focus(); }
-  function closeKinozalAccount() { $('kinozal-account-dialog').hidden = true; $('kinozal-account-open').focus(); }
+  var kinozalKeyboardTarget = null, kinozalKeyboardTimer = null, kinozalSystemKeyboardVisible = false;
+  var kinozalKeyboardLanguage = 'en', kinozalKeyboardShift = false, kinozalKeyboardSymbols = false;
+  function hideKinozalKeyboard() { $('kinozal-account-keyboard').hidden = true; clearTimeout(kinozalKeyboardTimer); }
+  function kinozalKeyboardWrite(value, erase) {
+    if (!kinozalKeyboardTarget) return;
+    kinozalKeyboardTarget.value = erase ? kinozalKeyboardTarget.value.slice(0, -1) : kinozalKeyboardTarget.value + value;
+  }
+  function renderKinozalKeyboard() {
+    var board = $('kinozal-account-keyboard'); clear(board);
+    var rows = kinozalKeyboardSymbols ? ['1234567890', '!@#$%^&*()', '-_=+[]{}', ';:,.?/\\|'] :
+      kinozalKeyboardLanguage === 'ru' ? ['1234567890', 'йцукенгшщзхъ', 'фывапролджэ', 'ячсмитьбю'] :
+      ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+    function row() { var el = document.createElement('div'); el.className = 'kinozal-key-row'; board.appendChild(el); return el; }
+    rows.forEach(function (letters) {
+      var host = row();
+      Array.from(letters).forEach(function (letter) {
+        var shown = kinozalKeyboardShift ? letter.toUpperCase() : letter;
+        host.appendChild(makeButton(shown, 'kinozal-key', function () { kinozalKeyboardWrite(shown, false); }));
+      });
+    });
+    var controls = row();
+    controls.appendChild(makeButton('⇧', 'kinozal-key', function () { kinozalKeyboardShift = !kinozalKeyboardShift; renderKinozalKeyboard(); }));
+    controls.appendChild(makeButton(kinozalKeyboardLanguage === 'ru' ? 'ABC' : 'АБВ', 'kinozal-key wide', function () { kinozalKeyboardLanguage = kinozalKeyboardLanguage === 'ru' ? 'en' : 'ru'; kinozalKeyboardSymbols = false; renderKinozalKeyboard(); }));
+    controls.appendChild(makeButton(kinozalKeyboardSymbols ? 'Буквы' : 'Символы', 'kinozal-key wide', function () { kinozalKeyboardSymbols = !kinozalKeyboardSymbols; renderKinozalKeyboard(); }));
+    controls.appendChild(makeButton('Пробел', 'kinozal-key wide', function () { kinozalKeyboardWrite(' ', false); }));
+    controls.appendChild(makeButton('⌫', 'kinozal-key', function () { kinozalKeyboardWrite('', true); }));
+    controls.appendChild(makeButton('Готово', 'kinozal-key wide', function () {
+      var next = kinozalKeyboardTarget === $('kinozal-account-user') ? $('kinozal-account-pass') : $('kinozal-account-login');
+      hideKinozalKeyboard();
+      if (next === $('kinozal-account-pass')) activateKinozalInput(next); else next.focus();
+    }));
+    if (!board.hidden) { var first = board.querySelector('button'); if (first) first.focus(); }
+  }
+  function showKinozalKeyboard(input) {
+    kinozalKeyboardTarget = input;
+    renderKinozalKeyboard();
+    $('kinozal-account-keyboard').hidden = false;
+    var first = $('kinozal-account-keyboard').querySelector('button'); if (first) first.focus();
+  }
+  function scheduleKinozalKeyboard(input) {
+    kinozalKeyboardTarget = input;
+    clearTimeout(kinozalKeyboardTimer);
+    kinozalKeyboardTimer = setTimeout(function () {
+      if (!$('kinozal-account-dialog').hidden && document.activeElement === input && !kinozalSystemKeyboardVisible)
+        showKinozalKeyboard(input);
+    }, 700);
+  }
+  function activateKinozalInput(input) { input.blur(); input.focus(); input.click(); scheduleKinozalKeyboard(input); }
+  function openKinozalAccount() {
+    $('kinozal-account-status').textContent = '';
+    $('kinozal-account-dialog').hidden = false;
+    setTimeout(function () { if (!$('kinozal-account-dialog').hidden) activateKinozalInput($('kinozal-account-user')); }, 80);
+  }
+  function closeKinozalAccount() { hideKinozalKeyboard(); $('kinozal-account-pass').value = ''; $('kinozal-account-dialog').hidden = true; $('kinozal-account-open').focus(); }
+  function toggleKinozalRemember() {
+    var button = $('kinozal-account-remember'), enabled = button.getAttribute('aria-pressed') !== 'true';
+    button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    button.textContent = 'Запомнить пароль: ' + (enabled ? 'да' : 'нет');
+  }
+  async function loginKinozalAccount() {
+    var username = $('kinozal-account-user').value.trim(), password = $('kinozal-account-pass').value;
+    if (!username || !password) { $('kinozal-account-status').textContent = 'Введите логин и пароль Кинозала.'; return; }
+    var button = $('kinozal-account-login'); button.disabled = true;
+    $('kinozal-account-status').textContent = 'Вход в Kinozal…';
+    try {
+      var response = await fetch(KZ_HELPER + '/kinozal/session/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password, remember: $('kinozal-account-remember').getAttribute('aria-pressed') === 'true' }) });
+      var result = await response.json();
+      $('kinozal-account-pass').value = '';
+      if (!response.ok) throw new Error(result.message || 'Не удалось войти в Kinozal');
+      state.kzLoggedIn = true;
+      closeKinozalAccount();
+      await loadKinozal(false);
+      if (state.kzLoaded) updateKinozalAuth('Кинозал: вход выполнен', true);
+    } catch (e) { $('kinozal-account-pass').value = ''; $('kinozal-account-status').textContent = e.message; toast(e.message); }
+    finally { button.disabled = false; }
+  }
   async function refreshKinozalSession() {
     var button = $('kinozal-session-refresh');
     if (button.disabled) return;
@@ -346,10 +421,19 @@
     try {
       var response = await fetch(KZ_HELPER + '/kinozal/session/refresh', { cache: 'no-store' });
       var result = await response.json();
+      if (!response.ok && (result.error === 'kinozal_rate_limited' || result.error === 'torrent_session_unavailable')) {
+        await loadKinozal(false);
+        if (state.kzLoaded) {
+          $('kinozal-message').textContent = 'Top доступен. ' + result.message;
+          updateKinozalAuth('Кинозал: torrent недоступен', false);
+          toast(result.message);
+          return;
+        }
+      }
       if (!response.ok) throw new Error(result.message || 'Не удалось восстановить доступ к Кинозалу');
       state.kzLoggedIn = true;
       await loadKinozal(false);
-      if (state.kzLoaded) updateKinozalAuth(result.source === 'mirror' ? 'Кинозал: зеркало подключено' : 'Кинозал: доступен', true);
+      if (state.kzLoaded) updateKinozalAuth('Кинозал: вход активен', true);
     } catch (e) {
       $('kinozal-message').textContent = 'Кинозал недоступен: ' + e.message;
       updateKinozalAuth('Кинозал: ошибка', false);
@@ -360,7 +444,7 @@
     }
   }
   function saveKinozalAccount() { closeKinozalAccount(); }
-  async function testKinozalAccount() { state.kzLoggedIn = false; $('kinozal-account-status').textContent = 'Проверка helper…'; try { await kinozalLogin(true); await kinozalGet('/top.php?t=0&d=0&f=0&c=0&k=0&j=&s=0&w=0&page=0', false); $('kinozal-account-status').textContent = 'Kinozal доступен через helper.'; } catch (e) { $('kinozal-account-status').textContent = e.message; } }
+  async function testKinozalAccount() { $('kinozal-account-status').textContent = 'Проверка входа…'; try { var response = await fetch(KZ_HELPER + '/kinozal/session/refresh', { cache: 'no-store' }); var result = await response.json(); if (!response.ok) throw new Error(result.message || 'Kinozal недоступен'); $('kinozal-account-status').textContent = 'Вход активен. Torrent загрузится при выборе раздачи.'; } catch (e) { $('kinozal-account-status').textContent = e.message; } }
   function kinozalSearchQuality(full) {
     var text = kzClean(full), out = [];
     function add(value) { if (value && out.indexOf(value) < 0) out.push(value); }
@@ -582,10 +666,18 @@
     if (focus) $('player-playpause').focus();
     state.osdTimer = setTimeout(function () {
       if (!$('track-menu').hidden || $('player').paused || $('player-status').textContent) return;
-      $('player-top').classList.remove('visible');
-      $('player-osd').classList.remove('visible');
-      $('player').focus();
+      hideOsd();
     }, 5000);
+  }
+  function hideOsd() {
+    clearTimeout(state.osdTimer);
+    $('player-top').classList.remove('visible');
+    $('player-osd').classList.remove('visible');
+    $('player').focus();
+  }
+  function toggleOsd() {
+    if ($('player-osd').classList.contains('visible')) hideOsd();
+    else showOsd(false);
   }
   function updatePlayButton() { $('player-playpause').textContent = $('player').paused ? '▶ Пуск' : 'Ⅱ Пауза'; }
   function seekBy(seconds) { var v = $('player'); if (!Number.isFinite(v.duration)) return; v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + seconds)); updateProgress(); showOsd(false); }
@@ -635,6 +727,7 @@
     if (!$('sort-dialog').hidden) { closeSortDialog(); return; }
     if (!$('server-dialog').hidden) { closeServerDialog(); return; }
     if (!$('kinozal-filter-dialog').hidden) { closeKinozalFilter(); return; }
+    if (!$('kinozal-account-keyboard').hidden) { hideKinozalKeyboard(); $('kinozal-account-remember').focus(); return; }
     if (!$('kinozal-account-dialog').hidden) { closeKinozalAccount(); return; }
     if (!$('kinozal-search-dialog').hidden) { closeKinozalSearch(); return; }
     if (!$('kinozal-torrent-dialog').hidden) { closeKinozalTorrents(); return; }
@@ -647,7 +740,7 @@
     openExitDialog();
   }
   function moveFocus(direction) {
-    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : document;
+    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : document;
     var elements = Array.from(scope.querySelectorAll('.focusable')).filter(function (el) { return !el.hidden && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0; }); if (!elements.length) return;
     var current = document.activeElement; if (elements.indexOf(current) < 0) { elements[0].focus(); return; } var a = current.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2, best = null, score = Infinity;
     elements.forEach(function (el) { if (el === current) return; var r = el.getBoundingClientRect(), dx = r.left + r.width / 2 - ax, dy = r.top + r.height / 2 - ay; var primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy; if (primary <= 5) return; var secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx); var value = primary + secondary * 2.5; if (value < score) { score = value; best = el; } });
@@ -671,11 +764,23 @@
   });
 
   $('search-open').addEventListener('click', function () { showBase('search'); if (!state.searchItems.length || state.searchMode !== 'catalog') loadDiscovery(false, false); else $('search-input').focus(); }); $('search-form').addEventListener('submit', function (event) { event.preventDefault(); search($('search-input').value); }); $('filter-open').addEventListener('click', openFilterDialog); $('sort-open').addEventListener('click', openSortDialog); $('filter-apply').addEventListener('click', applyFilters); $('filter-reset').addEventListener('click', resetFilters); $('filter-cancel').addEventListener('click', closeFilterDialog); $('sort-cancel').addEventListener('click', closeSortDialog); Array.from(document.querySelectorAll('.sort-option')).forEach(function (b) { b.addEventListener('click', function () { chooseSort(b.dataset.sort); }); }); $('search-load-more').addEventListener('click', function () { loadDiscovery(true, false); }); $('load-more').addEventListener('click', function () { loadCatalog(state.catalog, true); });
-  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  ['kinozal-account-user', 'kinozal-account-pass'].forEach(function (id) {
+    $(id).addEventListener('focus', function () { scheduleKinozalKeyboard(this); });
+    $(id).addEventListener('click', function () { scheduleKinozalKeyboard(this); });
+    $(id).addEventListener('input', function () { clearTimeout(kinozalKeyboardTimer); });
+    $(id).addEventListener('keydown', function (event) {
+      if (event.keyCode === 13) { event.preventDefault(); event.stopPropagation(); activateKinozalInput(this); }
+    });
+  });
+  document.addEventListener('keyboardStateChange', function (event) {
+    kinozalSystemKeyboardVisible = Boolean(event.detail && event.detail.visibility);
+    if (kinozalSystemKeyboardVisible) hideKinozalKeyboard();
+  });
   $('detail-back').addEventListener('click', back); $('person-back').addEventListener('click', closePerson); $('player-back').addEventListener('click', back); $('play-now').addEventListener('click', chooseSource); $('torrents-open').addEventListener('click', openTorrents); $('detail-kinozal').addEventListener('click', openKinozalSearch); $('kinozal-search-more').addEventListener('click', function(){loadKinozalSearch(true);}); $('kinozal-search-cancel').addEventListener('click', closeKinozalSearch); $('torrent-close').addEventListener('click', closeTorrents); $('favorite-toggle').addEventListener('click', toggleFavorite);
   $('torrserver-settings').addEventListener('click', openServerDialog); $('server-cancel').addEventListener('click', closeServerDialog); $('server-test').addEventListener('click', testServerDialog); $('server-save').addEventListener('click', saveServerDialog);
   $('exit-cancel').addEventListener('click', closeExitDialog); $('exit-confirm').addEventListener('click', exitApp);
-  $('player-rewind').addEventListener('click', function () { seekBy(-10); }); $('player-forward').addEventListener('click', function () { seekBy(30); }); $('player-stop').addEventListener('click', stopPlayer); $('player-playpause').addEventListener('click', function () { var v = $('player'); if (v.paused) v.play(); else v.pause(); }); $('player-audio').addEventListener('click', function () { openTrackMenu('audio'); }); $('player-subs').addEventListener('click', function () { openTrackMenu('subs'); }); $('track-menu-close').addEventListener('click', closeTrackMenu); $('player-progress').addEventListener('click', seekToPointer); $('player-view').addEventListener('mousemove', function () { showOsd(false); });
+  $('player-rewind').addEventListener('click', function () { seekBy(-10); }); $('player-forward').addEventListener('click', function () { seekBy(30); }); $('player-stop').addEventListener('click', stopPlayer); $('player-playpause').addEventListener('click', function () { var v = $('player'); if (v.paused) v.play(); else v.pause(); }); $('player-audio').addEventListener('click', function () { openTrackMenu('audio'); }); $('player-subs').addEventListener('click', function () { openTrackMenu('subs'); }); $('track-menu-close').addEventListener('click', closeTrackMenu); $('player-progress').addEventListener('click', seekToPointer); $('player').addEventListener('click', toggleOsd); $('player-view').addEventListener('mousemove', function () { showOsd(false); });
   $('player').addEventListener('playing', function () { $('player-status').textContent = ''; setBuffering(false); updatePlayButton(); updateProgress(); showOsd(false); }); $('player').addEventListener('canplay', function () { setBuffering(false); updateProgress(); }); $('player').addEventListener('waiting', function () { setBuffering(true, 'Буферизация…'); }); $('player').addEventListener('stalled', function () { setBuffering(true, 'Ожидание данных…'); }); $('player').addEventListener('progress', updateProgress); $('player').addEventListener('pause', function () { updatePlayButton(); showOsd(false); }); $('player').addEventListener('timeupdate', updateProgress); $('player').addEventListener('durationchange', updateProgress); $('player').addEventListener('loadedmetadata', function () { updateProgress(); showOsd(false); }); $('player').addEventListener('error', function () { $('player-status').textContent = 'Ошибка воспроизведения. Формат/кодек или сервер может не поддерживаться ТВ.'; showOsd(false); });
 
   seedKinozalConfig();

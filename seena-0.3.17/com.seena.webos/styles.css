@@ -69,3 +69,11 @@
 /* v0.3.7 Kinozal search from every Seena media card */
 .kinozal-inline{border-color:#8a642b;color:#ffd793;background:#2b2114}.kinozal-inline:focus{background:#79511d;color:#fff}.kinozal-search-card{width:1220px}.kinozal-search-card #kinozal-search-query{font-size:20px;color:#ffd793}.kinozal-search-release strong{line-height:1.35}.kinozal-search-release small{color:#b9c7df}.kinozal-search-card .dialog-actions{position:sticky;bottom:0;background:#111a2b;padding-top:12px}
 @media(max-width:1350px){.kinozal-search-card{width:920px}}
+
+/* Account keyboard fallback for webOS TVs that do not open the system keyboard. */
+.kinozal-account-card{max-height:92vh;overflow-y:auto}
+.kinozal-keyboard{margin:16px 0;padding:12px;border:1px solid #415679;border-radius:12px;background:#0a1325}
+.kinozal-key-row{display:flex;justify-content:center;flex-wrap:wrap;margin-bottom:6px}
+.kinozal-key{min-width:46px;height:48px;margin:3px;padding:5px 7px;border:1px solid #516686;border-radius:8px;background:#263a5d;color:#fff;font-size:19px}
+.kinozal-key.wide{min-width:88px}
+.kinozal-key:focus{background:#6482cf}

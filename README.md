@@ -1,8 +1,8 @@
-# Seena 0.3.12: Kinozal через локальный helper
+# Seena 0.3.17: Kinozal через локальный helper
 
 Целевая система: rooted LG webOS 6.5.x с 32-битным ARM userspace. Приложение обращается к `http://127.0.0.1:8787`; helper запрашивает Kinozal через patched ARMHF `curl-impersonate` 2.2.3 и передаёт `.torrent` в существующий UI Seena, который загружает его в TorrServer на `127.0.0.1:8090`.
 
-В 0.3.9 верхняя строка плеера («К карточке» и название) скрывается вместе с нижними кнопками через 5 секунд воспроизведения без действий. Нажатие кнопки или движение указателя пульта показывает обе панели; при паузе, ошибке и открытом меню дорожек они остаются видимыми. В 0.3.10 Seena повторяет запрос при временном Cloudflare challenge. В 0.3.11 helper автоматически переключается между `kinozal.guru` и официальным зеркалом `kinozal.jumpingcrab.com`. Кнопка «Обновить сессию» справа от «Аккаунт» проверяет доступный адрес и перезагружает Top. В 0.3.12 загрузка torrent обращается к выбранному адресу через helper.
+В 0.3.9 верхняя строка плеера («К карточке» и название) скрывается вместе с нижними кнопками через 5 секунд воспроизведения без действий. Нажатие кнопки или движение указателя пульта показывает обе панели; при паузе, ошибке и открытом меню дорожек они остаются видимыми. В 0.3.10 Seena повторяет запрос при временном Cloudflare challenge. В 0.3.11 helper автоматически переключается между `kinozal.guru` и официальным зеркалом `kinozal.jumpingcrab.com`. В 0.3.12 загрузка torrent обращается к выбранному адресу через helper. В 0.3.13 добавлен вход в Kinozal на TV; при сохранённом пароле кнопка «Обновить сессию» повторяет вход, если авторизация истекла. В 0.3.15 Seena показывает собственную клавиатуру, если системная не открылась. В 0.3.16 проверка входа больше не скачивает тестовый torrent. В 0.3.17 нажатие на видео переключает видимость обеих панелей.
 
 ## Что выяснилось про Cloudflare
 
@@ -11,15 +11,16 @@
 - TV `curl-impersonate` с `chrome150`, Yandex User-Agent и новым clearance получает HTTP 200 по HTTP/2, иногда вперемежку с challenge 403. Helper повторяет challenge до пяти раз и возвращает JSON ошибку, если все попытки отклонены.
 - После reboot IPv6 запросы на TV истекали по тайм-ауту; `--ipv4` дал рабочее соединение. HTTP/3 на TV также истекал по тайм-ауту. Рабочая конфигурация использует HTTP/2 поверх IPv4.
 - На этом TV прямой TLS к Kinozal зависает после reboot при отключённом LGVPN. После подключения уже установленного LGVPN тот же helper сразу вернул HTTP 200. По разрешению пользователя startup hook запускает LGVPN при загрузке (до 12 попыток); это направляет сетевой трафик TV через настроенный VPN-сервер. Если VPN не поднялся, helper возвращает понятную ошибку `vpn_disconnected`.
-- Официальный канал Kinozal публикует адрес зеркала `kinozal.jumpingcrab.com`: https://t.me/s/kinozaltv_official. На TV оно возвращает Top, поиск, карточку и `.torrent` по существующим `uid`/`pass` без `cf_clearance`. Поэтому обычная загрузка и кнопка восстановления сначала проверяют зеркало; при его отказе helper пробует `kinozal.guru`.
-- Полное совпадение TLS/HTTP2 fingerprint с Yandex Browser не доказано. Кнопка переключает адрес и проверяет существующую авторизацию; она не решает новый Cloudflare challenge, если оба адреса его требуют. В таком случае потребуется обновить cookies на Windows.
+- Официальный канал Kinozal публикует адрес зеркала `kinozal.jumpingcrab.com`: https://t.me/s/kinozaltv_official. На TV оно возвращало Top, поиск, карточку и `.torrent` по `uid`/`pass` без `cf_clearance`. При отказе зеркала helper пробует `kinozal.guru`.
+- Публичные страницы зеркала helper запрашивает без cookies. Если Kinozal ограничил запросы для аккаунта, Top остаётся доступен. Кнопка «Обновить сессию» проверяет авторизованную страницу без скачивания `.torrent`: на Kinozal действует [суточное ограничение на количество скачанных torrent-файлов](https://forum.kinozal.tv/showthread.php?t=70485). Torrent загружается только при выборе раздачи, HTTP 429 показывается отдельно.
+- Полное совпадение TLS/HTTP2 fingerprint с Yandex Browser не доказано. Вход через зеркало выполняется из Seena на TV. Если Kinozal отвечает HTTP 429 и после повторного входа, Seena сообщает об ограничении; клиент не может снять его самостоятельно.
 
 ## Размещение на TV
 
 | Путь | Назначение |
 | --- | --- |
-| `/media/developer/apps/usr/palm/applications/com.seena.webos` | Seena 0.3.12 |
-| `/var/lib/webosbrew/seena-helper` | helper, patched curl, ARMHF runtime, `cookies.json` с правами `600` |
+| `/media/developer/apps/usr/palm/applications/com.seena.webos` | Seena 0.3.17 |
+| `/var/lib/webosbrew/seena-helper` | helper, patched curl, ARMHF runtime, `cookies.json` и при включённом автологине `account.json` с правами `600` |
 | `/home/r/l` | короткая ссылка на ARMHF ELF loader из persistent каталога |
 | `/var/lib/webosbrew/init.d/seena-helper` | штатный Homebrew startup hook для LGVPN и watcher helper |
 | `/var/lib/webosbrew/seena-helper/seena-0.3.7-backup` | резервная копия установленной 0.3.7 |
@@ -34,13 +35,13 @@ Watchdog `seena-helper-watch` проверяет локальный `/health` к
 
 ```powershell
 node --check helper/seena-kinozal-helper.js
-node --check seena-0.3.12/com.seena.webos/app.js
+node --check seena-0.3.17/com.seena.webos/app.js
 node --test 'C:\Users\USER\Documents\ChatGPT\WebOS\build-0.3.7\model.test.cjs'
-ares-package seena-0.3.12/com.seena.webos -o dist
+ares-package seena-0.3.17/com.seena.webos -o dist
 ./install.ps1
 ```
 
-`install.ps1` использует SSH `root@192.168.1.95` и ключ `~/.ssh/lg_webos_codex`; параметры `-Tv` и `-Key` их переопределяют. Он сначала проверяет helper и HTTP 200 к Top, потом копирует 0.3.12 поверх установленного приложения. Архив `dist/com.seena.webos_0.3.12_all.ipk` собирается для хранения; на данном TV `ares-install` недоступен из-за прав на конфигурацию SSH, поэтому установка выполняется по SSH. Для повторной установки сохраните локальную папку `runtime/`: она содержит пропатченный бинарник и ARMHF библиотеки и намеренно не попадает в Git.
+`install.ps1` использует SSH `root@192.168.1.95` и ключ `~/.ssh/lg_webos_codex`; параметры `-Tv` и `-Key` их переопределяют. Он проверяет локальный `/health` helper и копирует 0.3.17 поверх установленного приложения. Проверка Top не блокирует установку, если Kinozal временно отвечает HTTP 429. Архив `dist/com.seena.webos_0.3.17_all.ipk` собирается для хранения; на данном TV `ares-install` недоступен из-за прав на конфигурацию SSH, поэтому установка выполняется по SSH. Для повторной установки сохраните локальную папку `runtime/`: она содержит пропатченный бинарник и ARMHF библиотеки и намеренно не попадает в Git.
 
 После копирования установщик даёт WebView доступ к файлам приложения, завершает уже запущенный процесс Seena и запускает новый. Это нужно при обновлении поверх работающей версии: иначе TV может оставить старую страницу в памяти или показать серый экран.
 
@@ -53,9 +54,13 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/kinozal/top
 /var/lib/webosbrew/lgvpn/lgvpn-status | head -1
 ```
 
-Маршруты: `/health`, `/kinozal/top`, `/kinozal/search`, `/kinozal/details?id=…`, `/kinozal/torrent?id=…`, `/kinozal/image?url=…`, `/kinozal/cookies/status`, `/kinozal/session/refresh`. Сервис слушает только `127.0.0.1`; cookies никогда не возвращаются в API или логи. Доступ WebView обеспечивается CORS.
+Маршруты: `/health`, `/kinozal/top`, `/kinozal/search`, `/kinozal/details?id=…`, `/kinozal/torrent?id=…`, `/kinozal/image?url=…`, `/kinozal/cookies/status`, `/kinozal/session/refresh`, `POST /kinozal/session/login`. Сервис слушает только `127.0.0.1`; cookies и пароль никогда не возвращаются в API или логи. Доступ WebView обеспечивается CORS.
 
-## Обновление cookies
+## Вход в Kinozal на телевизоре
+
+Откройте «Кинозал» → «Аккаунт», введите логин и пароль и нажмите «Войти на TV». Если системная клавиатура не откроется, Seena покажет свою. Если включить «Запомнить пароль», helper сохранит его в `account.json` с правами `600`; при истечении авторизации кнопка «Обновить сессию» попробует войти снова. Без этой настройки пароль не сохраняется, а успешные cookies остаются в `cookies.json`. Вход идёт через HTTPS на зеркало. При HTTP 429 повторный вход не снимает ограничение сервера; потребуется подождать.
+
+## Старый способ обновления cookies через Windows
 
 1. Откройте Kinozal в Yandex Browser на Windows и дождитесь обычной страницы Top.
 2. Полностью закройте браузер, включая фоновые процессы. Не завершайте его принудительно до сохранения вкладок.
@@ -65,7 +70,7 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/kinozal/top
 
 ## Удаление и откат
 
-Чтобы вернуть прежнюю Seena и убрать helper, сначала остановите его процесс, затем восстановите файлы из `/var/lib/webosbrew/seena-helper/seena-0.3.7-backup` (или локальной папки `backup/seena-tv-0.3.7`). После проверки 0.3.7 удалите только `/var/lib/webosbrew/init.d/seena-helper`, `/home/r/l` и `/var/lib/webosbrew/seena-helper`. Это не требует изменений системных разделов. При удалении одного helper оставленная Seena 0.3.12 потеряет доступ к вкладке Kinozal.
+Чтобы вернуть прежнюю Seena и убрать helper, сначала остановите его процесс, затем восстановите файлы из `/var/lib/webosbrew/seena-helper/seena-0.3.7-backup` (или локальной папки `backup/seena-tv-0.3.7`). После проверки 0.3.7 удалите только `/var/lib/webosbrew/init.d/seena-helper`, `/home/r/l` и `/var/lib/webosbrew/seena-helper`. Это не требует изменений системных разделов. При удалении одного helper оставленная Seena 0.3.17 потеряет доступ к вкладке Kinozal.
 
 Команды для отката (на TV под root через SSH):
 
