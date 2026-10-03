@@ -5,6 +5,7 @@ var fs = require('fs');
 var path = require('path');
 var child = require('child_process');
 var URL = require('url').URL;
+var SeenaCache = require('./seena-cache');
 
 var root = process.env.SEENA_HELPER_ROOT || __dirname;
 var curl = process.env.SEENA_CURL || path.join(root, 'curl-impersonate-a55');
@@ -17,6 +18,20 @@ var hosts = ['https://kinozal.guru', 'https://kinozal.jumpingcrab.com'];
 var activeHost = hosts[1];
 var lastAutoLoginAt = 0;
 var rateLimitedUntil = {};
+var cache = new SeenaCache(root);
+var cacheGeneration = 0;
+var cacheTtl = { '/kinozal/top': 10 * 60 * 1000, '/kinozal/search': 10 * 60 * 1000,
+  '/kinozal/details': 60 * 60 * 1000 };
+
+function clearCache() { cacheGeneration += 1; return cache.clear(); }
+function cacheKey(route, params) {
+  if (!cacheTtl[route]) return null;
+  return cache.makeKey(route, params.toString());
+}
+function loginBody(body) {
+  var title = body.slice(0, 8192).toString('latin1');
+  return /<title>\s*(?:\xC2\xF5\xEE\xE4|Вход|Login)\s*::/i.test(title);
+}
 
 function json(res, status, object) {
   var body = Buffer.from(JSON.stringify(object), 'utf8');
@@ -113,6 +128,13 @@ function challenged(result) {
 function fetchRoute(route, params, host, fallback, callback) {
   var target = upstream(route, params, host);
   if (target === null || target === false) return callback(null, null, host, target);
+  var key = null;
+  try { key = cacheKey(route, params); }
+  catch (_) { return callback(new Error('cookies_missing'), null, host); }
+  if (key) {
+    try { var saved = cache.get(key); if (saved) return callback(null, { status: 200, body: saved, cached: true }, host); }
+    catch (_) {}
+  }
   if (Date.now() < (rateLimitedUntil[host] || 0))
     return callback(null, { status: 429, body: Buffer.alloc(0) }, host);
   var cookie;
@@ -122,6 +144,7 @@ function fetchRoute(route, params, host, fallback, callback) {
     return callback(new Error('cookies_missing'), null, host);
   }
   fetchWithRetry(target, cookie, 1, function (error, result) {
+    if (result) { result.cacheKey = key; result.cacheGeneration = cacheGeneration; }
     if (result && result.status === 429) {
       rateLimitedUntil[host] = Date.now() + 2 * 60 * 1000;
       return callback(null, result, host);
@@ -186,6 +209,7 @@ function savePrivateJson(file, value) {
 }
 
 function saveLogin(session, credentials, remember) {
+  clearCache();
   var previous = {};
   try { previous = JSON.parse(fs.readFileSync(cookieFile, 'utf8')); } catch (_) {}
   savePrivateJson(cookieFile, { uid: session.uid, pass: session.pass, cf_clearance: previous.cf_clearance || '' });
@@ -241,6 +265,25 @@ http.createServer(function (req, res) {
   var request;
   try { request = new URL(req.url, 'http://127.0.0.1:' + port); }
   catch (_) { return json(res, 400, { error: 'invalid_url' }); }
+  if (req.method === 'POST' && request.pathname === '/cache/clear') {
+    try { return json(res, 200, clearCache()); }
+    catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось очистить кэш.' }); }
+  }
+  if (req.method === 'POST' && request.pathname === '/cache/settings') {
+    var settingsParts = [], settingsLength = 0;
+    req.on('data', function (part) { settingsLength += part.length; if (settingsLength <= 256) settingsParts.push(part); });
+    req.on('end', function () {
+      if (settingsLength > 256) return json(res, 413, { error: 'invalid_request' });
+      var input;
+      try { input = JSON.parse(Buffer.concat(settingsParts).toString('utf8')); }
+      catch (_) { return json(res, 400, { error: 'invalid_request' }); }
+      if (!input || typeof input.limitMb !== 'number') return json(res, 400, { error: 'invalid_request' });
+      try { return json(res, 200, cache.setLimitMb(input.limitMb)); }
+      catch (error) { return json(res, error.message === 'invalid_cache_limit' ? 400 : 500,
+        { error: error.message === 'invalid_cache_limit' ? 'invalid_cache_limit' : 'cache_error' }); }
+    });
+    return;
+  }
   if (req.method === 'POST' && request.pathname === '/kinozal/session/login') {
     var parts = [], length = 0, tooLarge = false;
     req.on('data', function (part) { length += part.length; if (length > 4096) tooLarge = true; else parts.push(part); });
@@ -269,13 +312,17 @@ http.createServer(function (req, res) {
   }
   if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' });
   if (request.pathname === '/health') return json(res, 200, { status: 'ok' });
+  if (request.pathname === '/cache/status') {
+    try { return json(res, 200, cache.status()); }
+    catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось прочитать кэш.' }); }
+  }
   if (request.pathname === '/kinozal/cookies/status') {
     try { cookieHeader(hosts[1], '/kinozal/torrent'); return json(res, 200, { present: true }); }
     catch (_) { return json(res, 200, { present: false }); }
   }
   if (request.pathname === '/kinozal/session/refresh') {
     return verifySession(function (result) {
-      if (result.status === 200) return sendSessionResult(res, result);
+      if (result.status === 200) { try { clearCache(); } catch (_) {} return sendSessionResult(res, result); }
       var credentials = savedLogin();
       if (!credentials || result.error !== 'torrent_session_unavailable')
         return sendSessionResult(res, result);
@@ -308,8 +355,15 @@ http.createServer(function (req, res) {
       return json(res, 502, { error: 'invalid_torrent_response', message: 'Kinozal не вернул .torrent.' });
     var mime = image ? imageType(result.body) : '';
     if (image && !mime) return json(res, 502, { error: 'invalid_image_response' });
+    if (!torrent && !image && loginBody(result.body))
+      return json(res, 503, { error: 'session_unavailable', message: 'Кинозал требует повторный вход.' });
+    if (!result.cached && result.cacheKey && result.cacheGeneration === cacheGeneration) {
+      try { cache.put(result.cacheKey, 'page', result.body, cacheTtl[request.pathname]); }
+      catch (error) { console.warn('Seena cache write failed: ' + (error.code || error.message)); }
+    }
     res.writeHead(200, { 'Content-Type': torrent ? 'application/x-bittorrent' : image ? mime : 'text/html; charset=windows-1251',
-      'Content-Length': result.body.length, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+      'Content-Length': result.body.length, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store',
+      'X-Seena-Cache': result.cached ? 'HIT' : 'MISS' });
     res.end(result.body);
   });
 }).listen(port, '127.0.0.1', function () { console.log('Seena Kinozal helper listening on 127.0.0.1:' + port); });

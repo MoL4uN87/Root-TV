@@ -13,6 +13,7 @@
       <nav id="catalog-nav" aria-label="Каталоги"></nav>
       <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
       <button id="history-open" class="nav-action focusable" type="button">История</button>
+      <button id="cache-open" class="nav-action focusable" type="button">Настройки</button>
       <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
     </header>
 
@@ -297,6 +298,26 @@
         <p id="kinozal-torrent-status" class="muted"></p>
         <div id="kinozal-torrent-list" class="torrent-list kinozal-torrent-list"></div>
         <div class="dialog-actions"><button id="kinozal-torrent-cancel" class="text-button focusable" type="button">Отмена</button></div>
+      </div>
+    </section>
+
+    <section id="cache-dialog" class="dialog-backdrop" hidden aria-label="Настройки кэша Кинозала">
+      <div class="dialog-card cache-card">
+        <h2>Кэш Кинозала</h2>
+        <p class="muted">Seena сохраняет список карточек и связанные с ними раздачи для быстрого повторного открытия. Видео и файлы .torrent здесь не хранятся.</p>
+        <p id="cache-usage" class="detail-meta">Загружаем сведения о кэше…</p>
+        <h3>Максимальный размер</h3>
+        <div id="cache-sizes" class="choice-row">
+          <button class="cache-size choice-button focusable" type="button" data-cache-mb="0">Выключить</button>
+          <button class="cache-size choice-button focusable" type="button" data-cache-mb="4">4 МБ</button>
+          <button class="cache-size choice-button focusable" type="button" data-cache-mb="8">8 МБ</button>
+          <button class="cache-size choice-button focusable" type="button" data-cache-mb="16">16 МБ</button>
+        </div>
+        <p id="cache-status" class="muted"></p>
+        <div class="dialog-actions">
+          <button id="cache-clear" class="secondary focusable" type="button">Очистить кэш</button>
+          <button id="cache-close" class="text-button focusable" type="button">Закрыть</button>
+        </div>
       </div>
     </section>
 

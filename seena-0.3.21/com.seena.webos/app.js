@@ -7,7 +7,7 @@
     hasMore: false, loading: false, detail: null, detailItem: null, detailTrigger: null, sources: [], season: null,
     torrentsLoaded: false, personTrigger: null, playerSource: null, osdTimer: null, historyPending: null,
     searchItems: [], searchQuery: '', searchSort: 'popular', searchFilters: { genre: '', country: '', years: '', rating: 0 }, searchEnriching: false,
-    kzLoaded: false, kzLoading: false, kzLoggedIn: false, kzPage: 0, kzLastPage: 0, kzItems: [], kzDetail: null, kzDetailTrigger: null,
+    kzLoaded: false, kzLoadedAt: 0, kzLoading: false, kzLoggedIn: false, kzPage: 0, kzLastPage: 0, kzItems: [], kzDetail: null, kzDetailTrigger: null,
     kzSearchPage: 0, kzSearchLastPage: 0, kzSearchQuery: '', kzSearchItems: [], kzSearchTrigger: null, kzSearchLoading: false,
     kzFilters: { category: '0', year: '0', country: '0', format: '0', period: '0', sort: '0', genre: '' }
   };
@@ -234,6 +234,43 @@
 
   function choiceLabel(rows, value) { var found = rows.find(function (x) { return String(x[0]) === String(value); }); return found ? found[1] : String(value); }
   var KZ_HELPER = 'http://127.0.0.1:8787';
+  async function cacheRequest(path, options) {
+    var response = await fetch(KZ_HELPER + path, options || { cache: 'no-store' });
+    var result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Не удалось изменить кэш');
+    return result;
+  }
+  function updateCacheStatus(status) {
+    $('cache-usage').textContent = 'Занято: ' + (status.usedBytes / 1048576).toFixed(2) + ' МБ · сохранено страниц: ' + status.entries;
+    Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) {
+      var selected = Number(button.dataset.cacheMb) === status.limitMb;
+      button.classList.toggle('active', selected); button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+  }
+  async function openCacheSettings() {
+    $('cache-dialog').hidden = false; $('cache-status').textContent = '';
+    $('cache-usage').textContent = 'Загружаем сведения о кэше…'; $('cache-clear').focus();
+    try { updateCacheStatus(await cacheRequest('/cache/status')); }
+    catch (error) { $('cache-usage').textContent = 'Кэш недоступен'; $('cache-status').textContent = error.message; }
+  }
+  function closeCacheSettings() { $('cache-dialog').hidden = true; $('cache-open').focus(); }
+  async function setCacheLimit(limitMb, button) {
+    button.disabled = true; $('cache-status').textContent = 'Сохраняем размер кэша…';
+    try {
+      var status = await cacheRequest('/cache/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limitMb: limitMb }) });
+      updateCacheStatus(status); $('cache-status').textContent = limitMb ? 'Размер кэша сохранён.' : 'Кэш выключен и очищен.';
+    } catch (error) { $('cache-status').textContent = error.message; }
+    finally { button.disabled = false; button.focus(); }
+  }
+  async function clearKinozalCache() {
+    var button = $('cache-clear'); button.disabled = true; $('cache-status').textContent = 'Очищаем кэш…';
+    try {
+      updateCacheStatus(await cacheRequest('/cache/clear', { method: 'POST' }));
+      state.kzLoaded = false; state.kzLoadedAt = 0; state.kzSearchItems = [];
+      $('cache-status').textContent = 'Кэш очищен. При следующем открытии Кинозал загрузит свежие данные.';
+    } catch (error) { $('cache-status').textContent = error.message; }
+    finally { button.disabled = false; button.focus(); }
+  }
   function kinozalSettings() { return { base: 'https://kinozal.guru' }; }
   async function seedKinozalConfig() {
     localStorage.removeItem('seena.kinozal.user');
@@ -346,7 +383,7 @@
     if (!append) { state.kzLoaded = false; state.kzItems = []; state.kzPage = 0; state.kzLastPage = 0; clear($('kinozal-grid')); $('kinozal-message').textContent = 'Загрузка топа…'; $('kinozal-more').hidden = true; }
     try {
       if (!state.kzLoggedIn) await kinozalLogin(false); var html = await kinozalGet(kinozalTopPath(page), false); var parsed = parseKinozalTop(html);
-      parsed.items.forEach(function (item) { $('kinozal-grid').appendChild(renderKinozalCard(item)); }); state.kzItems = append ? state.kzItems.concat(parsed.items) : parsed.items; state.kzPage = page; state.kzLastPage = parsed.lastPage; state.kzLoaded = true;
+      parsed.items.forEach(function (item) { $('kinozal-grid').appendChild(renderKinozalCard(item)); }); state.kzItems = append ? state.kzItems.concat(parsed.items) : parsed.items; state.kzPage = page; state.kzLastPage = parsed.lastPage; state.kzLoaded = true; if (!append) state.kzLoadedAt = Date.now();
       $('kinozal-message').textContent = parsed.items.length ? 'Популярные раздачи Кинозала. Выберите карточку.' : 'Раздачи по выбранным фильтрам не найдены.'; $('kinozal-page-info').textContent = 'Страница ' + (page + 1) + (parsed.lastPage ? ' из ' + (parsed.lastPage + 1) : ''); $('kinozal-more').hidden = !parsed.items.length || page >= parsed.lastPage; updateKinozalSummary();
       if (!append) { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); }
     } catch (e) { $('kinozal-message').textContent = 'Кинозал недоступен: ' + e.message; updateKinozalAuth('Кинозал: ошибка', false); toast(e.message); }
@@ -755,6 +792,7 @@
 
   function back() {
     if (!$('exit-dialog').hidden) { closeExitDialog(); return; }
+    if (!$('cache-dialog').hidden) { closeCacheSettings(); return; }
     if (!$('filter-dialog').hidden) { closeFilterDialog(); return; }
     if (!$('sort-dialog').hidden) { closeSortDialog(); return; }
     if (!$('server-dialog').hidden) { closeServerDialog(); return; }
@@ -773,12 +811,40 @@
     openExitDialog();
   }
   function moveFocus(direction) {
-    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : state.view === 'history' ? $('history-view') : document;
+    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('cache-dialog').hidden ? $('cache-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : state.view === 'history' ? $('history-view') : document;
     var elements = Array.from(scope.querySelectorAll('.focusable')).filter(function (el) { return !el.hidden && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0; }); if (!elements.length) return;
     var current = document.activeElement; if (elements.indexOf(current) < 0) { elements[0].focus(); return; } var a = current.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2, best = null, score = Infinity;
     elements.forEach(function (el) { if (el === current) return; var r = el.getBoundingClientRect(), dx = r.left + r.width / 2 - ax, dy = r.top + r.height / 2 - ay; var primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy; if (primary <= 5) return; var secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx); var value = primary + secondary * 2.5; if (value < score) { score = value; best = el; } });
     if (best) { best.focus(); best.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
   }
+  function wheelCards(event) {
+    if (!$('player-view').hidden || !$('detail-view').hidden || !$('kinozal-detail-view').hidden ||
+        !$('person-view').hidden || document.activeElement.tagName === 'INPUT' ||
+        Array.from(document.querySelectorAll('.dialog-backdrop')).some(function (dialog) { return !dialog.hidden; })) return;
+    var grid = state.view === 'catalog' ? $('catalog-grid') : state.view === 'search' ? $('search-grid') :
+      state.view === 'kinozal' ? $('kinozal-grid') : state.view === 'history' ? $('history-grid') : null;
+    if (!grid) return;
+    var cards = Array.from(grid.querySelectorAll('.poster-card'));
+    if (!cards.length) return;
+    var delta = event.deltaY || -event.wheelDelta;
+    if (!delta) return;
+    event.preventDefault();
+    var current = document.activeElement, chosen = null;
+    if (cards.indexOf(current) < 0) chosen = delta > 0 ? cards[0] : cards[cards.length - 1];
+    else {
+      var rect = current.getBoundingClientRect(), cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2, score = Infinity;
+      cards.forEach(function (card) {
+        if (card === current) return;
+        var next = card.getBoundingClientRect(), dx = Math.abs(next.left + next.width / 2 - cx);
+        var dy = (next.top + next.height / 2 - cy) * (delta > 0 ? 1 : -1);
+        if (dy <= 5) return;
+        var value = dy + dx * 2.5;
+        if (value < score) { score = value; chosen = card; }
+      });
+    }
+    if (chosen) { chosen.focus(); chosen.scrollIntoView({ block: 'center', inline: 'nearest' }); }
+  }
+  document.addEventListener('wheel', wheelCards, { passive: false });
 
   document.addEventListener('keydown', function (event) {
     var key = event.keyCode; if (key === 461 || key === 27 || key === 8 && document.activeElement.tagName !== 'INPUT') { event.preventDefault(); back(); return; }
@@ -797,7 +863,9 @@
   });
 
   $('history-open').addEventListener('click', showHistory); $('search-open').addEventListener('click', function () { showBase('search'); if (!state.searchItems.length || state.searchMode !== 'catalog') loadDiscovery(false, false); else $('search-input').focus(); }); $('search-form').addEventListener('submit', function (event) { event.preventDefault(); search($('search-input').value); }); $('filter-open').addEventListener('click', openFilterDialog); $('sort-open').addEventListener('click', openSortDialog); $('filter-apply').addEventListener('click', applyFilters); $('filter-reset').addEventListener('click', resetFilters); $('filter-cancel').addEventListener('click', closeFilterDialog); $('sort-cancel').addEventListener('click', closeSortDialog); Array.from(document.querySelectorAll('.sort-option')).forEach(function (b) { b.addEventListener('click', function () { chooseSort(b.dataset.sort); }); }); $('search-load-more').addEventListener('click', function () { loadDiscovery(true, false); }); $('load-more').addEventListener('click', function () { loadCatalog(state.catalog, true); });
-  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 10 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearKinozalCache);
+  Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) { button.addEventListener('click', function () { setCacheLimit(Number(button.dataset.cacheMb), button); }); });
   ['kinozal-account-user', 'kinozal-account-pass'].forEach(function (id) {
     $(id).addEventListener('focus', function () { scheduleKinozalKeyboard(this); });
     $(id).addEventListener('click', function () { scheduleKinozalKeyboard(this); });
