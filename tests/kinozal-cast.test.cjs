@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const model = require('../seena-0.3.26/com.seena.webos/model.js');
+const model = require('../seena-0.3.27/com.seena.webos/model.js');
 
 test('Kinozal release title is reduced to the catalog search title', () => {
   assert.equal(
