@@ -13,6 +13,8 @@
       <nav id="catalog-nav" aria-label="Каталоги"></nav>
       <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
       <button id="history-open" class="nav-action focusable" type="button">История</button>
+      <button id="tv-open" class="nav-action focusable" type="button">ТВ-передачи</button>
+      <button id="sport-open" class="nav-action focusable" type="button">Спорт</button>
       <button id="cache-open" class="nav-action focusable" type="button">Настройки</button>
       <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
     </header>
@@ -46,6 +48,38 @@
         <div class="section-head"><h1>История просмотров</h1><p id="history-count" class="muted"></p></div>
         <p id="history-message" class="muted">Здесь появятся фильмы и раздачи после начала воспроизведения.</p>
         <div id="history-grid" class="poster-grid history-grid"></div>
+      </section>
+    </main>
+
+    <main id="tv-view" class="view" hidden>
+      <section class="service-section">
+        <div class="section-head"><h1>ТВ-передачи</h1><p class="muted">Бесплатные официальные сервисы</p></div>
+        <p class="service-help">Выберите сервис. Seena откроет его в браузере телевизора; кнопка Back вернёт вас в приложение.</p>
+        <div class="service-grid">
+          <button class="service-card service-card-tv focusable" type="button" data-service="peers">
+            <strong>Peers.TV</strong><span>Эфирные телеканалы, передачи и архив выпусков. Часть каналов доступна бесплатно без регистрации.</span><small>Открыть официальный сервис →</small>
+          </button>
+          <button class="service-card service-card-free focusable" type="button" data-service="ntvplus">
+            <strong>НТВ-ПЛЮС · Бесплатно</strong><span>Федеральные и тематические каналы, фильмы и передачи. Для просмотра нужна бесплатная регистрация.</span><small>Открыть официальный сервис →</small>
+          </button>
+        </div>
+        <p id="tv-service-status" class="muted service-status-text"></p>
+      </section>
+    </main>
+
+    <main id="sport-view" class="view" hidden>
+      <section class="service-section">
+        <div class="section-head"><h1>Спорт</h1><p class="muted">Бесплатные официальные трансляции</p></div>
+        <p class="service-help">Доступность отдельных соревнований зависит от прав вещателя и региона.</p>
+        <div class="service-grid">
+          <button class="service-card service-card-sport focusable" type="button" data-service="matchtv">
+            <strong>Матч ТВ · Прямой эфир</strong><span>Бесплатный эфир федерального спортивного канала, программа и отдельные открытые трансляции.</span><small>Открыть официальный сервис →</small>
+          </button>
+          <button class="service-card service-card-free focusable" type="button" data-service="ntvplus">
+            <strong>НТВ-ПЛЮС · Бесплатно</strong><span>Матч ТВ и другие бесплатные федеральные каналы после регистрации.</span><small>Открыть официальный сервис →</small>
+          </button>
+        </div>
+        <p id="sport-service-status" class="muted service-status-text"></p>
       </section>
     </main>
 

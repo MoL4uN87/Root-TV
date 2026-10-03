@@ -29,7 +29,9 @@
   function showBase(view) {
     state.view = view;
     $('catalog-view').hidden = view !== 'catalog'; $('search-view').hidden = view !== 'search'; $('kinozal-view').hidden = view !== 'kinozal'; $('history-view').hidden = view !== 'history';
+    $('tv-view').hidden = view !== 'tv'; $('sport-view').hidden = view !== 'sport';
     $('history-open').classList.toggle('active', view === 'history');
+    $('tv-open').classList.toggle('active', view === 'tv'); $('sport-open').classList.toggle('active', view === 'sport');
     $('detail-view').hidden = true; $('kinozal-detail-view').hidden = true; $('person-view').hidden = true; $('player-view').hidden = true;
     window.scrollTo(0, 0);
   }
@@ -239,6 +241,17 @@
     var result = await response.json();
     if (!response.ok) throw new Error(result.message || 'Не удалось изменить кэш');
     return result;
+  }
+  async function openExternalService(service, button) {
+    var status = state.view === 'sport' ? $('sport-service-status') : $('tv-service-status');
+    button.disabled = true; status.textContent = 'Открываем браузер телевизора…';
+    try {
+      var response = await fetch(KZ_HELPER + '/external/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ service: service }) });
+      var result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Не удалось открыть сервис');
+      status.textContent = 'Сервис открыт. Нажмите Back в браузере, чтобы вернуться в Seena.';
+    } catch (error) { status.textContent = error.message; toast(error.message); }
+    finally { button.disabled = false; }
   }
   function updateCacheStatus(status) {
     var kinds = status.kinds || {}, pages = Number(kinds.page) || 0, people = Number(kinds.person) || 0;
@@ -825,10 +838,12 @@
     if (state.view === 'search') { showBase('catalog'); $('search-open').focus(); return; }
     if (state.view === 'kinozal') { showBase('catalog'); var kback = document.querySelector('.nav-item.active') || $('kinozal-open'); if (kback) kback.focus(); return; }
     if (state.view === 'history') { showBase('catalog'); $('history-open').focus(); return; }
+    if (state.view === 'tv') { showBase('catalog'); $('tv-open').focus(); return; }
+    if (state.view === 'sport') { showBase('catalog'); $('sport-open').focus(); return; }
     openExitDialog();
   }
   function moveFocus(direction) {
-    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('cache-dialog').hidden ? $('cache-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : state.view === 'history' ? $('history-view') : document;
+    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('cache-dialog').hidden ? $('cache-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : state.view === 'history' ? $('history-view') : state.view === 'tv' ? $('tv-view') : state.view === 'sport' ? $('sport-view') : document;
     var elements = Array.from(scope.querySelectorAll('.focusable')).filter(function (el) { return !el.hidden && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0; }); if (!elements.length) return;
     var current = document.activeElement; if (elements.indexOf(current) < 0) { elements[0].focus(); return; } var a = current.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2, best = null, score = Infinity;
     elements.forEach(function (el) { if (el === current) return; var r = el.getBoundingClientRect(), dx = r.left + r.width / 2 - ax, dy = r.top + r.height / 2 - ay; var primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy; if (primary <= 5) return; var secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx); var value = primary + secondary * 2.5; if (value < score) { score = value; best = el; } });
@@ -880,6 +895,9 @@
   });
 
   $('history-open').addEventListener('click', showHistory); $('search-open').addEventListener('click', function () { showBase('search'); if (!state.searchItems.length || state.searchMode !== 'catalog') loadDiscovery(false, false); else $('search-input').focus(); }); $('search-form').addEventListener('submit', function (event) { event.preventDefault(); search($('search-input').value); }); $('filter-open').addEventListener('click', openFilterDialog); $('sort-open').addEventListener('click', openSortDialog); $('filter-apply').addEventListener('click', applyFilters); $('filter-reset').addEventListener('click', resetFilters); $('filter-cancel').addEventListener('click', closeFilterDialog); $('sort-cancel').addEventListener('click', closeSortDialog); Array.from(document.querySelectorAll('.sort-option')).forEach(function (b) { b.addEventListener('click', function () { chooseSort(b.dataset.sort); }); }); $('search-load-more').addEventListener('click', function () { loadDiscovery(true, false); }); $('load-more').addEventListener('click', function () { loadCatalog(state.catalog, true); });
+  $('tv-open').addEventListener('click', function () { showBase('tv'); var first = $('tv-view').querySelector('.service-card'); if (first) first.focus(); });
+  $('sport-open').addEventListener('click', function () { showBase('sport'); var first = $('sport-view').querySelector('.service-card'); if (first) first.focus(); });
+  Array.from(document.querySelectorAll('.service-card')).forEach(function (button) { button.addEventListener('click', function () { openExternalService(button.dataset.service, button); }); });
   $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 10 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
   $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearSeenaCache);
   Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) { button.addEventListener('click', function () { setCacheLimit(Number(button.dataset.cacheMb), button); }); });

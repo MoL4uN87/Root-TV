@@ -99,4 +99,20 @@
 /* Uniform top navigation controls for webOS remote focus. */
 .topbar .nav-item,.topbar .nav-action{height:52px;min-height:52px;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding-top:0;padding-bottom:0}
 .topbar .nav-action span,.topbar .nav-action .search-label{font-size:inherit}
-#cache-open,#search-open{margin-left:12px}
+#tv-open,#sport-open,#cache-open,#search-open{margin-left:12px}
+
+/* Official free TV and sport service launchers. */
+#tv-open.active,#sport-open.active{background:#243661;color:#fff}
+.service-section{padding:52px 64px 80px}
+.service-help{color:#aebbd6;max-width:1100px;line-height:1.5;margin:8px 0 28px}
+.service-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-column-gap:24px;grid-row-gap:24px;max-width:1400px}
+.service-card{min-height:230px;border:1px solid #40557e;border-radius:18px;padding:30px;text-align:left;color:#fff;background:linear-gradient(145deg,#172642,#111a2e)}
+.service-card strong{display:block;font-size:32px;margin-bottom:18px}
+.service-card span{display:block;color:#c5d0e8;font-size:20px;line-height:1.45;min-height:86px}
+.service-card small{display:block;color:#9fb5ff;font-size:18px;margin-top:18px}
+.service-card-tv{border-color:#496a9e;background:linear-gradient(145deg,#173559,#111a2e)}
+.service-card-sport{border-color:#8f3d47;background:linear-gradient(145deg,#54202a,#171421)}
+.service-card-free{border-color:#75643b;background:linear-gradient(145deg,#40351d,#171822)}
+.service-card:focus{outline:none;transform:scale(1.025);box-shadow:inset 0 0 0 3px #e5edff,inset 0 0 0 6px #37579b,0 16px 38px #0008}
+.service-status-text{margin-top:24px}
+@media(max-width:1100px){.service-grid{grid-template-columns:1fr}.service-section{padding-left:32px;padding-right:32px}}
