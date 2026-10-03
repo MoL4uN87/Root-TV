@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const model = require('../seena-0.3.28/com.seena.webos/model.js');
+const model = require('../seena-0.3.29/com.seena.webos/model.js');
 
 test('free Match TV broadcasts are ordered live first', () => {
   const response = { result: { broadcasts: [

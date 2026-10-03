@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const model = require('../seena-0.3.28/com.seena.webos/model.js');
+const model = require('../seena-0.3.29/com.seena.webos/model.js');
 
 test('Kinozal release title is reduced to the catalog search title', () => {
   assert.equal(
@@ -31,6 +31,10 @@ test('Kinozal title keeps Russian and original titles as separate catalog querie
   );
   assert.deepEqual(
     model.kinozalSearchQueries('Холод (сериал 2025 – ...)'),
+    ['Холод']
+  );
+  assert.deepEqual(
+    model.kinozalSearchQueries('Холод (1 сезон: 1-10 серии из 10) / 2026 / РУ / WEB-DLRip'),
     ['Холод']
   );
 });

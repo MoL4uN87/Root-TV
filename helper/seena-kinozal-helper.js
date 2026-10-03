@@ -7,6 +7,7 @@ var child = require('child_process');
 var URL = require('url').URL;
 var SeenaCache = require('./seena-cache');
 var cachePolicy = require('./seena-cache-policy');
+var VpnLease = require('./seena-vpn-lease');
 
 var root = process.env.SEENA_HELPER_ROOT || __dirname;
 var curl = process.env.SEENA_CURL || path.join(root, 'curl-impersonate-a55');
@@ -22,6 +23,16 @@ var rateLimitedUntil = {};
 var cache = new SeenaCache(root);
 var cacheGeneration = 0;
 var personCacheTtl = 7 * 24 * 60 * 60 * 1000;
+var vpnRoot = process.env.SEENA_LGVPN_ROOT || '/var/lib/webosbrew/lgvpn';
+function runVpnScript(name) {
+  var result = child.spawnSync(path.join(vpnRoot, name), [], { encoding: 'utf8', timeout: 20000 });
+  if (result.error || result.status !== 0) throw new Error('vpn_' + name.replace(/^lgvpn-/, '') + '_failed');
+}
+var sportNetworkLease = new VpnLease({
+  stopVpn: function () { runVpnScript('lgvpn-stop'); },
+  startVpn: function () { runVpnScript('lgvpn-start'); },
+  timeoutMs: 45000
+});
 function clearKinozalPages() { cacheGeneration += 1; return cache.clearKind('page'); }
 function clearAllCache() { cacheGeneration += 1; return cache.clear(); }
 function cacheKey(route, params) {
@@ -281,6 +292,17 @@ http.createServer(function (req, res) {
   if (req.method === 'POST' && request.pathname === '/cache/pages/clear') {
     try { return json(res, 200, clearKinozalPages()); }
     catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось обновить страницы Кинозала.' }); }
+  }
+  if (req.method === 'POST' && /^\/sports\/network\/(start|keepalive|stop)$/.test(request.pathname)) {
+    var networkAction = request.pathname.split('/').pop();
+    try {
+      var networkStatus = networkAction === 'start' ? sportNetworkLease.acquire() :
+        networkAction === 'keepalive' ? sportNetworkLease.keepAlive() : sportNetworkLease.release();
+      return json(res, 200, networkStatus);
+    } catch (_) {
+      return json(res, 503, { error: 'sport_network_switch_failed',
+        message: networkAction === 'stop' ? 'Не удалось восстановить LGVPN.' : 'Не удалось включить прямое соединение для спорта.' });
+    }
   }
   if (request.pathname === '/cache/person') {
     var personId = request.searchParams.get('id') || '';

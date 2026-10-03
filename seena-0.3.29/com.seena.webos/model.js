@@ -266,6 +266,7 @@
     var parts = String(value || '').split(/\s+\/\s+/), out = [];
     parts.slice(0, 2).forEach(function (part) {
       var title = part
+        .replace(/\s*\((?=[^)]*(?:сезон|сери))[^)]*\)\s*$/i, '')
         .replace(/\s*\((?:сериал\s*)?(?:19|20)\d{2}[^)]*\)\s*$/i, '')
         .replace(/\s*\[(?:19|20)\d{2}[^\]]*\]\s*$/i, '')
         .trim();
