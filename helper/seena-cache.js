@@ -51,7 +51,7 @@ SeenaCache.prototype._scan = function () {
     try {
       var stat = fs.lstatSync(file), header = stat.isFile() ? self._header(file) : null;
       if (!header || header.expiresAt <= self.now()) { if (stat.isFile()) fs.unlinkSync(file); return; }
-      entries.push({ file: file, bytes: stat.size, accessedAt: stat.mtime.getTime() });
+      entries.push({ file: file, bytes: stat.size, accessedAt: stat.mtime.getTime(), kind: header.kind });
     } catch (_) {}
   });
   return entries;
@@ -100,9 +100,10 @@ SeenaCache.prototype.put = function (key, kind, body, ttlMs) {
 };
 
 SeenaCache.prototype.status = function () {
-  var entries = this._scan();
+  var entries = this._scan(), kinds = {};
+  entries.forEach(function (entry) { kinds[entry.kind] = (kinds[entry.kind] || 0) + 1; });
   return { limitMb: this.limitMb, entries: entries.length,
-    usedBytes: entries.reduce(function (sum, entry) { return sum + entry.bytes; }, 0) };
+    usedBytes: entries.reduce(function (sum, entry) { return sum + entry.bytes; }, 0), kinds: kinds };
 };
 
 SeenaCache.prototype.setLimitMb = function (value) {
@@ -125,6 +126,13 @@ SeenaCache.prototype.clear = function () {
     if (!/^[a-f0-9]{64}\.bin$/.test(name)) return;
     var file = path.join(self.dir, name);
     if (fs.lstatSync(file).isFile()) fs.unlinkSync(file);
+  });
+  return this.status();
+};
+
+SeenaCache.prototype.clearKind = function (kind) {
+  this._scan().forEach(function (entry) {
+    if (entry.kind === kind) fs.unlinkSync(entry.file);
   });
   return this.status();
 };

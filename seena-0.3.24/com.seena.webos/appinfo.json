@@ -1,6 +1,6 @@
 {
   "id": "com.seena.webos",
-  "version": "0.3.23",
+  "version": "0.3.24",
   "vendor": "Seena webOS port",
   "type": "web",
   "main": "index.html",

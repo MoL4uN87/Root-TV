@@ -241,7 +241,8 @@
     return result;
   }
   function updateCacheStatus(status) {
-    $('cache-usage').textContent = 'Занято: ' + (status.usedBytes / 1048576).toFixed(2) + ' МБ · сохранено страниц: ' + status.entries;
+    var kinds = status.kinds || {}, pages = Number(kinds.page) || 0, people = Number(kinds.person) || 0;
+    $('cache-usage').textContent = 'Занято: ' + (status.usedBytes / 1048576).toFixed(2) + ' МБ · страницы Кинозала: ' + pages + ' · актёры: ' + people;
     Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) {
       var selected = Number(button.dataset.cacheMb) === status.limitMb;
       button.classList.toggle('active', selected); button.setAttribute('aria-pressed', selected ? 'true' : 'false');
@@ -262,14 +263,30 @@
     } catch (error) { $('cache-status').textContent = error.message; }
     finally { button.disabled = false; button.focus(); }
   }
-  async function clearKinozalCache() {
+  async function clearSeenaCache() {
     var button = $('cache-clear'); button.disabled = true; $('cache-status').textContent = 'Очищаем кэш…';
     try {
       updateCacheStatus(await cacheRequest('/cache/clear', { method: 'POST' }));
       state.kzLoaded = false; state.kzLoadedAt = 0; state.kzSearchItems = [];
-      $('cache-status').textContent = 'Кэш очищен. При следующем открытии Кинозал загрузит свежие данные.';
+      $('cache-status').textContent = 'Кэш очищен. Страницы Кинозала и карточки актёров загрузятся заново.';
     } catch (error) { $('cache-status').textContent = error.message; }
     finally { button.disabled = false; button.focus(); }
+  }
+  async function personResults(person) {
+    var path = '/cache/person?id=' + encodeURIComponent(person.id), response, cached;
+    try {
+      response = await fetch(KZ_HELPER + path, { cache: 'no-store' });
+      if (response.ok) {
+        cached = await response.json();
+        if (cached && cached.info && cached.credits) return [cached.info, cached.credits];
+      }
+    } catch (_) {}
+    var results = await Promise.all([fetchJson(model.personUrl(person.id)), fetchJson(model.personCreditsUrl(person.id, 80, 0))]);
+    try {
+      await fetch(KZ_HELPER + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ info: results[0], credits: results[1] }) });
+    } catch (_) {}
+    return results;
   }
   function kinozalSettings() { return { base: 'https://kinozal.guru' }; }
   async function seedKinozalConfig() {
@@ -620,7 +637,7 @@
     state.personTrigger = trigger || null; $('person-view').hidden = false; $('person-name').textContent = person.name; $('person-original-name').textContent = ''; $('person-count').textContent = 'Загрузка…'; $('person-note').textContent = ''; clear($('person-credits'));
     if (safeImage(person.photo)) setImage($('person-photo'), person.photo); else $('person-photo').removeAttribute('src'); $('person-photo').alt = person.name; $('person-back').focus();
     try {
-      var results = await Promise.all([fetchJson(model.personUrl(person.id)), fetchJson(model.personCreditsUrl(person.id, 80, 0))]);
+      var results = await personResults(person);
       if ($('person-view').hidden) return; var info = model.personInfo(results[0], person); var credits = model.personCreditItems(results[1]);
       $('person-name').textContent = info.name; $('person-original-name').textContent = info.originalName && info.originalName !== info.name ? info.originalName : '';
       if (safeImage(info.photo)) setImage($('person-photo'), info.photo); $('person-count').textContent = 'Работ в каталоге: ' + (results[1].total || credits.length);
@@ -864,7 +881,7 @@
 
   $('history-open').addEventListener('click', showHistory); $('search-open').addEventListener('click', function () { showBase('search'); if (!state.searchItems.length || state.searchMode !== 'catalog') loadDiscovery(false, false); else $('search-input').focus(); }); $('search-form').addEventListener('submit', function (event) { event.preventDefault(); search($('search-input').value); }); $('filter-open').addEventListener('click', openFilterDialog); $('sort-open').addEventListener('click', openSortDialog); $('filter-apply').addEventListener('click', applyFilters); $('filter-reset').addEventListener('click', resetFilters); $('filter-cancel').addEventListener('click', closeFilterDialog); $('sort-cancel').addEventListener('click', closeSortDialog); Array.from(document.querySelectorAll('.sort-option')).forEach(function (b) { b.addEventListener('click', function () { chooseSort(b.dataset.sort); }); }); $('search-load-more').addEventListener('click', function () { loadDiscovery(true, false); }); $('load-more').addEventListener('click', function () { loadCatalog(state.catalog, true); });
   $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 10 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
-  $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearKinozalCache);
+  $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearSeenaCache);
   Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) { button.addEventListener('click', function () { setCacheLimit(Number(button.dataset.cacheMb), button); }); });
   ['kinozal-account-user', 'kinozal-account-pass'].forEach(function (id) {
     $(id).addEventListener('focus', function () { scheduleKinozalKeyboard(this); });

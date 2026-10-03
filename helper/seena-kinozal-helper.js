@@ -22,8 +22,10 @@ var cache = new SeenaCache(root);
 var cacheGeneration = 0;
 var cacheTtl = { '/kinozal/top': 10 * 60 * 1000, '/kinozal/search': 10 * 60 * 1000,
   '/kinozal/details': 60 * 60 * 1000 };
+var personCacheTtl = 7 * 24 * 60 * 60 * 1000;
 
-function clearCache() { cacheGeneration += 1; return cache.clear(); }
+function clearKinozalPages() { cacheGeneration += 1; return cache.clearKind('page'); }
+function clearAllCache() { cacheGeneration += 1; return cache.clear(); }
 function cacheKey(route, params) {
   if (!cacheTtl[route]) return null;
   return cache.makeKey(route, params.toString());
@@ -209,7 +211,7 @@ function savePrivateJson(file, value) {
 }
 
 function saveLogin(session, credentials, remember) {
-  clearCache();
+  clearKinozalPages();
   var previous = {};
   try { previous = JSON.parse(fs.readFileSync(cookieFile, 'utf8')); } catch (_) {}
   savePrivateJson(cookieFile, { uid: session.uid, pass: session.pass, cf_clearance: previous.cf_clearance || '' });
@@ -266,8 +268,42 @@ http.createServer(function (req, res) {
   try { request = new URL(req.url, 'http://127.0.0.1:' + port); }
   catch (_) { return json(res, 400, { error: 'invalid_url' }); }
   if (req.method === 'POST' && request.pathname === '/cache/clear') {
-    try { return json(res, 200, clearCache()); }
+    try { return json(res, 200, clearAllCache()); }
     catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось очистить кэш.' }); }
+  }
+  if (request.pathname === '/cache/person') {
+    var personId = request.searchParams.get('id') || '';
+    if (!/^\d{1,12}$/.test(personId)) return json(res, 400, { error: 'invalid_person' });
+    var personKey = cache.makeKey('/person', personId);
+    if (req.method === 'GET') {
+      try {
+        var personSaved = cache.get(personKey);
+        if (!personSaved) return json(res, 404, { error: 'cache_miss' });
+        return json(res, 200, JSON.parse(personSaved.toString('utf8')));
+      } catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось прочитать карточку актёра.' }); }
+    }
+    if (req.method === 'POST') {
+      var personParts = [], personLength = 0, personTooLarge = false;
+      req.on('data', function (part) {
+        personLength += part.length;
+        if (personLength > 2 * 1024 * 1024) personTooLarge = true; else personParts.push(part);
+      });
+      req.on('end', function () {
+        if (personTooLarge) return json(res, 413, { error: 'response_too_large' });
+        var personData;
+        try { personData = JSON.parse(Buffer.concat(personParts).toString('utf8')); }
+        catch (_) { return json(res, 400, { error: 'invalid_request' }); }
+        if (!personData || !personData.info || !personData.credits ||
+            typeof personData.info !== 'object' || typeof personData.credits !== 'object')
+          return json(res, 400, { error: 'invalid_request' });
+        try {
+          cache.put(personKey, 'person', Buffer.from(JSON.stringify(personData), 'utf8'), personCacheTtl);
+          return json(res, 200, { saved: true });
+        } catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось сохранить карточку актёра.' }); }
+      });
+      return;
+    }
+    return json(res, 405, { error: 'method_not_allowed' });
   }
   if (req.method === 'POST' && request.pathname === '/cache/settings') {
     var settingsParts = [], settingsLength = 0;
@@ -322,7 +358,7 @@ http.createServer(function (req, res) {
   }
   if (request.pathname === '/kinozal/session/refresh') {
     return verifySession(function (result) {
-      if (result.status === 200) { try { clearCache(); } catch (_) {} return sendSessionResult(res, result); }
+      if (result.status === 200) { try { clearKinozalPages(); } catch (_) {} return sendSessionResult(res, result); }
       var credentials = savedLogin();
       if (!credentials || result.error !== 'torrent_session_unavailable')
         return sendSessionResult(res, result);

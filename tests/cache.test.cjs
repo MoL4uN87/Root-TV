@@ -6,6 +6,7 @@ const path = require('node:path');
 const Cache = require('../helper/seena-cache.js');
 
 function temporaryCache(t, now) {
+  now = now || { value: Date.now() };
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seena-cache-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return new Cache(root, { now: () => now.value });
@@ -56,4 +57,18 @@ test('disabled cache stores nothing', t => {
   cache.put('key', 'page', Buffer.from('ignored'), 60_000);
   assert.equal(cache.get('key'), null);
   assert.equal(cache.status().usedBytes, 0);
+});
+
+test('actor cards share the size limit and survive Kinozal page refresh', t => {
+  const cache = temporaryCache(t);
+  const page = cache.makeKey('/kinozal/details', 'id=42');
+  const person = cache.makeKey('/person', '7');
+  const actorCard = Buffer.from(JSON.stringify({ info: { id: 7, name: 'Actor' }, credits: { items: [{ id: 42 }] } }));
+  cache.put(page, 'page', Buffer.from('release page'), 60_000);
+  cache.put(person, 'person', actorCard, 7 * 24 * 60 * 60 * 1000);
+  assert.deepEqual(cache.status().kinds, { page: 1, person: 1 });
+  cache.clearKind('page');
+  assert.equal(cache.get(page), null);
+  assert.equal(cache.get(person).toString(), actorCard.toString());
+  assert.deepEqual(cache.status().kinds, { person: 1 });
 });
