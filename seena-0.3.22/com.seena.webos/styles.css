@@ -95,3 +95,8 @@
 
 .cache-card p{line-height:1.45}
 .cache-card h3{margin:22px 0 12px}
+
+/* Uniform top navigation controls for webOS remote focus. */
+.topbar .nav-item,.topbar .nav-action{height:52px;min-height:52px;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding-top:0;padding-bottom:0}
+.topbar .nav-action span,.topbar .nav-action .search-label{font-size:inherit}
+#cache-open,#search-open{margin-left:12px}

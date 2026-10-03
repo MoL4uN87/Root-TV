@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const history = require('../seena-0.3.21/com.seena.webos/history.js');
+const history = require('../seena-0.3.22/com.seena.webos/history.js');
 
 function storage() {
   const values = new Map();
