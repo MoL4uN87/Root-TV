@@ -6,6 +6,7 @@ var path = require('path');
 var child = require('child_process');
 var URL = require('url').URL;
 var SeenaCache = require('./seena-cache');
+var cachePolicy = require('./seena-cache-policy');
 
 var root = process.env.SEENA_HELPER_ROOT || __dirname;
 var curl = process.env.SEENA_CURL || path.join(root, 'curl-impersonate-a55');
@@ -20,19 +21,11 @@ var lastAutoLoginAt = 0;
 var rateLimitedUntil = {};
 var cache = new SeenaCache(root);
 var cacheGeneration = 0;
-var cacheTtl = { '/kinozal/top': 10 * 60 * 1000, '/kinozal/search': 10 * 60 * 1000,
-  '/kinozal/details': 60 * 60 * 1000 };
 var personCacheTtl = 7 * 24 * 60 * 60 * 1000;
-var externalServices = {
-  peers: 'https://peers.tv/',
-  matchtv: 'https://matchtv.ru/on-air',
-  ntvplus: 'https://ntvplus.tv/free/'
-};
-
 function clearKinozalPages() { cacheGeneration += 1; return cache.clearKind('page'); }
 function clearAllCache() { cacheGeneration += 1; return cache.clear(); }
 function cacheKey(route, params) {
-  if (!cacheTtl[route]) return null;
+  if (!cachePolicy.ttl(route)) return null;
   return cache.makeKey(route, params.toString());
 }
 function loginBody(body) {
@@ -121,6 +114,15 @@ function fetchWithRetry(url, cookie, attempt, callback) {
       return setTimeout(function () { fetchWithRetry(url, cookie, attempt + 1, callback); }, 300 * attempt);
     }
     callback(error, result);
+  });
+}
+
+function proxyPublicJson(res, target) {
+  fetchOnce(target, '', function (error, result) {
+    if (error || !result) return json(res, 502, { error: 'upstream_connection', message: 'Не удалось загрузить трансляции.' });
+    if (result.status !== 200) return json(res, 502, { error: 'upstream_http', status: result.status, message: 'Сервис трансляций временно недоступен.' });
+    try { return json(res, 200, JSON.parse(result.body.toString('utf8'))); }
+    catch (_) { return json(res, 502, { error: 'invalid_response', message: 'Сервис вернул неверный ответ.' }); }
   });
 }
 
@@ -267,17 +269,6 @@ function connectionError() {
   return { error: 'upstream_connection', message: 'Не удалось подключиться к Kinozal.' };
 }
 
-function openExternalService(service) {
-  var target = externalServices[service];
-  if (!target) throw new Error('unknown_service');
-  var payload = JSON.stringify({ id: 'com.webos.app.browser', params: { target: target } });
-  var launched = child.spawnSync('/usr/bin/luna-send', ['-n', '1', '-f',
-    'luna://com.webos.applicationManager/launch', payload], { encoding: 'utf8', timeout: 5000 });
-  if (launched.error || launched.status !== 0 || !/"returnValue"\s*:\s*true/.test(launched.stdout || ''))
-    throw new Error('browser_launch_failed');
-  return { opened: true, service: service };
-}
-
 http.createServer(function (req, res) {
   if (req.method === 'OPTIONS') return json(res, 204, {});
   var request;
@@ -287,19 +278,9 @@ http.createServer(function (req, res) {
     try { return json(res, 200, clearAllCache()); }
     catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось очистить кэш.' }); }
   }
-  if (req.method === 'POST' && request.pathname === '/external/open') {
-    var externalParts = [], externalLength = 0;
-    req.on('data', function (part) { externalLength += part.length; if (externalLength <= 256) externalParts.push(part); });
-    req.on('end', function () {
-      if (externalLength > 256) return json(res, 413, { error: 'invalid_request' });
-      var externalInput;
-      try { externalInput = JSON.parse(Buffer.concat(externalParts).toString('utf8')); }
-      catch (_) { return json(res, 400, { error: 'invalid_request' }); }
-      try { return json(res, 200, openExternalService(externalInput && externalInput.service)); }
-      catch (error) { return json(res, error.message === 'unknown_service' ? 400 : 503,
-        { error: error.message, message: error.message === 'unknown_service' ? 'Неизвестный ТВ-сервис.' : 'Не удалось открыть браузер телевизора.' }); }
-    });
-    return;
+  if (req.method === 'POST' && request.pathname === '/cache/pages/clear') {
+    try { return json(res, 200, clearKinozalPages()); }
+    catch (_) { return json(res, 500, { error: 'cache_error', message: 'Не удалось обновить страницы Кинозала.' }); }
   }
   if (request.pathname === '/cache/person') {
     var personId = request.searchParams.get('id') || '';
@@ -386,9 +367,19 @@ http.createServer(function (req, res) {
     try { cookieHeader(hosts[1], '/kinozal/torrent'); return json(res, 200, { present: true }); }
     catch (_) { return json(res, 200, { present: false }); }
   }
+  if (request.pathname === '/sports/broadcasts') {
+    var sportDate = request.searchParams.get('date') || '';
+    if (!/^\d{8}$/.test(sportDate)) return json(res, 400, { error: 'invalid_date' });
+    return proxyPublicJson(res, 'https://matchtv.ru/api/v1/videohub/broadcasts?date=' + sportDate);
+  }
+  if (request.pathname === '/sports/media') {
+    var mediaId = request.searchParams.get('id') || '';
+    if (!/^\d{1,12}$/.test(mediaId)) return json(res, 400, { error: 'invalid_media' });
+    return proxyPublicJson(res, 'https://news.sportbox.ru/api/v5/media/' + mediaId);
+  }
   if (request.pathname === '/kinozal/session/refresh') {
     return verifySession(function (result) {
-      if (result.status === 200) { try { clearKinozalPages(); } catch (_) {} return sendSessionResult(res, result); }
+      if (result.status === 200) return sendSessionResult(res, result);
       var credentials = savedLogin();
       if (!credentials || result.error !== 'torrent_session_unavailable')
         return sendSessionResult(res, result);
@@ -424,7 +415,7 @@ http.createServer(function (req, res) {
     if (!torrent && !image && loginBody(result.body))
       return json(res, 503, { error: 'session_unavailable', message: 'Кинозал требует повторный вход.' });
     if (!result.cached && result.cacheKey && result.cacheGeneration === cacheGeneration) {
-      try { cache.put(result.cacheKey, 'page', result.body, cacheTtl[request.pathname]); }
+      try { cache.put(result.cacheKey, request.pathname === '/kinozal/torrent' ? 'torrent' : 'page', result.body, cachePolicy.ttl(request.pathname)); }
       catch (error) { console.warn('Seena cache write failed: ' + (error.code || error.message)); }
     }
     res.writeHead(200, { 'Content-Type': torrent ? 'application/x-bittorrent' : image ? mime : 'text/html; charset=windows-1251',

@@ -9,7 +9,8 @@
     searchItems: [], searchQuery: '', searchSort: 'popular', searchFilters: { genre: '', country: '', years: '', rating: 0 }, searchEnriching: false,
     kzLoaded: false, kzLoadedAt: 0, kzLoading: false, kzLoggedIn: false, kzPage: 0, kzLastPage: 0, kzItems: [], kzDetail: null, kzDetailTrigger: null,
     kzSearchPage: 0, kzSearchLastPage: 0, kzSearchQuery: '', kzSearchItems: [], kzSearchTrigger: null, kzSearchLoading: false,
-    kzFilters: { category: '0', year: '0', country: '0', format: '0', period: '0', sort: '0', genre: '' }
+    kzFilters: { category: '0', year: '0', country: '0', format: '0', period: '0', sort: '0', genre: '' },
+    sportLoadedAt: 0, sportItems: [], webPlayerTrigger: null
   };
   var $ = function (id) { return document.getElementById(id); };
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -32,7 +33,7 @@
     $('tv-view').hidden = view !== 'tv'; $('sport-view').hidden = view !== 'sport';
     $('history-open').classList.toggle('active', view === 'history');
     $('tv-open').classList.toggle('active', view === 'tv'); $('sport-open').classList.toggle('active', view === 'sport');
-    $('detail-view').hidden = true; $('kinozal-detail-view').hidden = true; $('person-view').hidden = true; $('player-view').hidden = true;
+    $('detail-view').hidden = true; $('kinozal-detail-view').hidden = true; $('person-view').hidden = true; $('player-view').hidden = true; closeWebPlayer();
     window.scrollTo(0, 0);
   }
   function makeButton(label, className, action) {
@@ -242,20 +243,53 @@
     if (!response.ok) throw new Error(result.message || 'Не удалось изменить кэш');
     return result;
   }
-  async function openExternalService(service, button) {
-    var status = state.view === 'sport' ? $('sport-service-status') : $('tv-service-status');
-    button.disabled = true; status.textContent = 'Открываем браузер телевизора…';
+  function openWebPlayer(url, title, trigger) {
+    state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = title || 'Онлайн-трансляция';
+    $('web-player-frame').src = url; $('web-player-view').hidden = false; $('web-player-back').focus();
+  }
+  function closeWebPlayer() {
+    if (!$('web-player-view') || $('web-player-view').hidden) return;
+    $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank';
+    var trigger = state.webPlayerTrigger; state.webPlayerTrigger = null;
+    if (trigger && document.body.contains(trigger)) trigger.focus();
+  }
+  function formatBroadcastTime(value) {
+    var date = new Date(value); if (!value || Number.isNaN(date.getTime())) return '';
+    return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+  }
+  function renderSportCard(item) {
+    var button = document.createElement('button'); button.type = 'button'; button.className = 'service-card service-card-sport focusable';
+    if (safeImage(item.image)) { var image = document.createElement('img'); image.alt = ''; setImage(image, item.image); button.appendChild(image); }
+    if (item.live) { var live = document.createElement('b'); live.className = 'sport-live'; live.textContent = 'ПРЯМОЙ ЭФИР'; button.appendChild(live); }
+    var title = document.createElement('strong'); title.textContent = item.title;
+    var copy = document.createElement('span'); copy.textContent = [item.channel, item.subtitle, formatBroadcastTime(item.startAt)].filter(Boolean).join(' · ');
+    var hint = document.createElement('small'); hint.textContent = 'Смотреть в Seena →'; button.append(title, copy, hint);
+    button.addEventListener('click', function () { openSportBroadcast(item, button); }); return button;
+  }
+  async function loadSports() {
+    if (state.sportItems.length && Date.now() - state.sportLoadedAt < 5 * 60 * 1000) return;
+    var date = new Date(), key = String(date.getFullYear()) + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+    $('sport-service-status').textContent = 'Загружаем бесплатные трансляции Матч ТВ…'; clear($('sport-grid'));
     try {
-      var response = await fetch(KZ_HELPER + '/external/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ service: service }) });
-      var result = await response.json();
-      if (!response.ok) throw new Error(result.message || 'Не удалось открыть сервис');
-      status.textContent = 'Сервис открыт. Нажмите Back в браузере, чтобы вернуться в Seena.';
-    } catch (error) { status.textContent = error.message; toast(error.message); }
+      var response = await fetchJson(KZ_HELPER + '/sports/broadcasts?date=' + key);
+      state.sportItems = model.matchBroadcastItems(response); state.sportLoadedAt = Date.now();
+      state.sportItems.forEach(function (item) { $('sport-grid').appendChild(renderSportCard(item)); });
+      $('sport-service-status').textContent = state.sportItems.length ? 'Сначала показаны трансляции, которые идут сейчас.' : 'Сегодня бесплатных трансляций не найдено.';
+      var first = $('sport-grid').querySelector('button'); if (first) first.focus();
+    } catch (error) { $('sport-service-status').textContent = 'Не удалось загрузить спорт: ' + error.message; }
+  }
+  async function openSportBroadcast(item, button) {
+    button.disabled = true; $('sport-service-status').textContent = 'Открываем трансляцию…';
+    try {
+      var response = await fetchJson(KZ_HELPER + '/sports/media?id=' + encodeURIComponent(item.id));
+      var url = model.matchPlayerUrl(response); if (!url) throw new Error('Официальный плеер недоступен');
+      openWebPlayer(url, item.title, button);
+    } catch (error) { $('sport-service-status').textContent = error.message; toast(error.message); }
     finally { button.disabled = false; }
   }
   function updateCacheStatus(status) {
-    var kinds = status.kinds || {}, pages = Number(kinds.page) || 0, people = Number(kinds.person) || 0;
-    $('cache-usage').textContent = 'Занято: ' + (status.usedBytes / 1048576).toFixed(2) + ' МБ · страницы Кинозала: ' + pages + ' · актёры: ' + people;
+    var kinds = status.kinds || {}, pages = Number(kinds.page) || 0, torrents = Number(kinds.torrent) || 0, people = Number(kinds.person) || 0;
+    $('cache-usage').textContent = 'Занято: ' + (status.usedBytes / 1048576).toFixed(2) + ' МБ · страницы: ' + pages + ' · торренты: ' + torrents + ' · актёры: ' + people;
     Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) {
       var selected = Number(button.dataset.cacheMb) === status.limitMb;
       button.classList.toggle('active', selected); button.setAttribute('aria-pressed', selected ? 'true' : 'false');
@@ -429,13 +463,14 @@
   async function applyKinozalFilter() { state.kzFilters.genre = $('kinozal-filter-genre').value.trim(); closeKinozalFilter(); await loadKinozal(false); }
   var kinozalKeyboardTarget = null, kinozalKeyboardTimer = null, kinozalSystemKeyboardVisible = false;
   var kinozalKeyboardLanguage = 'en', kinozalKeyboardShift = false, kinozalKeyboardSymbols = false;
-  function hideKinozalKeyboard() { $('kinozal-account-keyboard').hidden = true; clearTimeout(kinozalKeyboardTimer); }
+  function keyboardHost() { return kinozalKeyboardTarget === $('search-input') ? $('search-keyboard') : $('kinozal-account-keyboard'); }
+  function hideKinozalKeyboard() { $('kinozal-account-keyboard').hidden = true; $('search-keyboard').hidden = true; clearTimeout(kinozalKeyboardTimer); }
   function kinozalKeyboardWrite(value, erase) {
     if (!kinozalKeyboardTarget) return;
     kinozalKeyboardTarget.value = erase ? kinozalKeyboardTarget.value.slice(0, -1) : kinozalKeyboardTarget.value + value;
   }
   function renderKinozalKeyboard() {
-    var board = $('kinozal-account-keyboard'); clear(board);
+    var board = keyboardHost(); clear(board);
     var rows = kinozalKeyboardSymbols ? ['1234567890', '!@#$%^&*()', '-_=+[]{}', ';:,.?/\\|'] :
       kinozalKeyboardLanguage === 'ru' ? ['1234567890', 'йцукенгшщзхъ', 'фывапролджэ', 'ячсмитьбю'] :
       ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
@@ -454,6 +489,7 @@
     controls.appendChild(makeButton('Пробел', 'kinozal-key wide', function () { kinozalKeyboardWrite(' ', false); }));
     controls.appendChild(makeButton('⌫', 'kinozal-key', function () { kinozalKeyboardWrite('', true); }));
     controls.appendChild(makeButton('Готово', 'kinozal-key wide', function () {
+      if (kinozalKeyboardTarget === $('search-input')) { var query = kinozalKeyboardTarget.value; hideKinozalKeyboard(); search(query); return; }
       var next = kinozalKeyboardTarget === $('kinozal-account-user') ? $('kinozal-account-pass') : $('kinozal-account-login');
       hideKinozalKeyboard();
       if (next === $('kinozal-account-pass')) activateKinozalInput(next); else next.focus();
@@ -463,14 +499,15 @@
   function showKinozalKeyboard(input) {
     kinozalKeyboardTarget = input;
     renderKinozalKeyboard();
-    $('kinozal-account-keyboard').hidden = false;
-    var first = $('kinozal-account-keyboard').querySelector('button'); if (first) first.focus();
+    keyboardHost().hidden = false;
+    var first = keyboardHost().querySelector('button'); if (first) first.focus();
   }
   function scheduleKinozalKeyboard(input) {
     kinozalKeyboardTarget = input;
     clearTimeout(kinozalKeyboardTimer);
     kinozalKeyboardTimer = setTimeout(function () {
-      if (!$('kinozal-account-dialog').hidden && document.activeElement === input && !kinozalSystemKeyboardVisible)
+      var visible = input === $('search-input') ? state.view === 'search' && !$('search-view').hidden : !$('kinozal-account-dialog').hidden;
+      if (visible && document.activeElement === input && !kinozalSystemKeyboardVisible)
         showKinozalKeyboard(input);
     }, 700);
   }
@@ -534,6 +571,17 @@
       button.disabled = false;
       button.textContent = 'Обновить сессию';
     }
+  }
+  async function refreshKinozalContent() {
+    var button = $('kinozal-content-refresh'); if (button.disabled) return;
+    button.disabled = true; button.textContent = 'Обновление…';
+    try {
+      var response = await fetch(KZ_HELPER + '/cache/pages/clear', { method: 'POST', cache: 'no-store' });
+      if (!response.ok) throw new Error('Не удалось очистить страницы');
+      state.kzLoaded = false; state.kzLoadedAt = 0; await loadKinozal(false);
+      if (state.kzLoaded) toast('Top Кинозала обновлён');
+    } catch (error) { toast(error.message); }
+    finally { button.disabled = false; button.textContent = 'Обновить Top'; }
   }
   function saveKinozalAccount() { closeKinozalAccount(); }
   async function testKinozalAccount() { $('kinozal-account-status').textContent = 'Проверка входа…'; try { var response = await fetch(KZ_HELPER + '/kinozal/session/refresh', { cache: 'no-store' }); var result = await response.json(); if (!response.ok) throw new Error(result.message || 'Kinozal недоступен'); $('kinozal-account-status').textContent = 'Вход активен. Torrent загрузится при выборе раздачи.'; } catch (e) { $('kinozal-account-status').textContent = e.message; } }
@@ -610,11 +658,21 @@
     var section = $('kinozal-credits-section'), list = $('kinozal-cast-list'), note = $('kinozal-cast-note');
     section.hidden = false; clear(list); note.textContent = 'Подбираем карточки актёров…';
     try {
-      var query = model.kinozalSearchTitle(detail.title); if (!query) throw new Error('Название не найдено');
-      var searchResult = await fetchJson(model.searchUrl(query));
-      var match = model.bestCatalogMatch(searchResult, query, detail.year, detail.mediaType);
-      if (!match) throw new Error('Фильм не найден в каталоге');
-      var catalogDetail = await fetchJson(model.detailUrl(match.id));
+      var queries = model.kinozalSearchQueries(detail.title); if (!queries.length) throw new Error('Название не найдено');
+      var candidates = [], seen = {}, match = null;
+      for (var q = 0; q < queries.length; q += 1) {
+        var searchResult = await fetchJson(model.searchUrl(queries[q]));
+        var queryMatch = model.bestCatalogMatchAny(searchResult, queries, detail.year, detail.mediaType);
+        if (!match && queryMatch) match = queryMatch;
+        model.catalogItems(searchResult).slice(0, 8).forEach(function (item) { if (!seen[item.id]) { seen[item.id] = true; candidates.push(item); } });
+      }
+      if (match && !seen[match.id]) candidates.unshift(match);
+      if (!candidates.length) throw new Error('Фильм не найден в каталоге');
+      var actorNames = model.kinozalActorNames(detail.cast), inspect = actorNames.length ? candidates.slice(0, 8) : [match || candidates[0]];
+      var details = await Promise.all(inspect.map(function (item) { return fetchJson(model.detailUrl(item.id)).catch(function () { return null; }); }));
+      details = details.filter(Boolean);
+      var catalogDetail = model.bestDetailByCast(details, actorNames) || details[0];
+      if (!catalogDetail) throw new Error('Карточка каталога недоступна');
       if ($('kinozal-detail-view').hidden || state.kzDetail !== detail) return;
       var cast = model.castItems(catalogDetail).slice(0, 24);
       appendCastCards(cast, list);
@@ -841,12 +899,14 @@
   }
 
   function back() {
+    if (!$('web-player-view').hidden) { closeWebPlayer(); return; }
     if (!$('exit-dialog').hidden) { closeExitDialog(); return; }
     if (!$('cache-dialog').hidden) { closeCacheSettings(); return; }
     if (!$('filter-dialog').hidden) { closeFilterDialog(); return; }
     if (!$('sort-dialog').hidden) { closeSortDialog(); return; }
     if (!$('server-dialog').hidden) { closeServerDialog(); return; }
     if (!$('kinozal-filter-dialog').hidden) { closeKinozalFilter(); return; }
+    if (!$('search-keyboard').hidden) { hideKinozalKeyboard(); $('search-input').focus(); return; }
     if (!$('kinozal-account-keyboard').hidden) { hideKinozalKeyboard(); $('kinozal-account-remember').focus(); return; }
     if (!$('kinozal-account-dialog').hidden) { closeKinozalAccount(); return; }
     if (!$('kinozal-search-dialog').hidden) { closeKinozalSearch(); return; }
@@ -862,8 +922,19 @@
     if (state.view === 'sport') { showBase('catalog'); $('sport-open').focus(); return; }
     openExitDialog();
   }
+  function centerTopMenuItem(item) {
+    var menu = $('top-menu'), box = menu.getBoundingClientRect(), target = item.getBoundingClientRect();
+    menu.scrollLeft += target.left - box.left - (box.width - target.width) / 2;
+  }
+  function moveTopMenu(direction) {
+    var menu = $('top-menu'), items = Array.from(menu.querySelectorAll('.focusable')).filter(function (item) { return item.getBoundingClientRect().width > 0; });
+    var index = items.indexOf(document.activeElement); if (index < 0) return false;
+    var next = model.horizontalNavigationIndex(index, direction, items.length);
+    if (next === index) return true;
+    items[next].focus(); centerTopMenuItem(items[next]); return true;
+  }
   function moveFocus(direction) {
-    var scope = !$('exit-dialog').hidden ? $('exit-dialog') : !$('cache-dialog').hidden ? $('cache-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : state.view === 'history' ? $('history-view') : state.view === 'tv' ? $('tv-view') : state.view === 'sport' ? $('sport-view') : document;
+    var scope = !$('web-player-view').hidden ? $('web-player-view') : !$('exit-dialog').hidden ? $('exit-dialog') : !$('cache-dialog').hidden ? $('cache-dialog') : !$('filter-dialog').hidden ? $('filter-dialog') : !$('sort-dialog').hidden ? $('sort-dialog') : !$('server-dialog').hidden ? $('server-dialog') : !$('kinozal-filter-dialog').hidden ? $('kinozal-filter-dialog') : !$('search-keyboard').hidden ? $('search-keyboard') : !$('kinozal-account-keyboard').hidden ? $('kinozal-account-keyboard') : !$('kinozal-account-dialog').hidden ? $('kinozal-account-dialog') : !$('kinozal-search-dialog').hidden ? $('kinozal-search-dialog') : !$('kinozal-torrent-dialog').hidden ? $('kinozal-torrent-dialog') : !$('player-view').hidden ? $('player-view') : !$('person-view').hidden ? $('person-view') : !$('kinozal-detail-view').hidden ? $('kinozal-detail-view') : !$('detail-view').hidden ? $('detail-view') : state.view === 'search' ? $('search-view') : state.view === 'kinozal' ? $('kinozal-view') : state.view === 'history' ? $('history-view') : state.view === 'tv' ? $('tv-view') : state.view === 'sport' ? $('sport-view') : document;
     var elements = Array.from(scope.querySelectorAll('.focusable')).filter(function (el) { return !el.hidden && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0; }); if (!elements.length) return;
     var current = document.activeElement; if (elements.indexOf(current) < 0) { elements[0].focus(); return; } var a = current.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2, best = null, score = Infinity;
     elements.forEach(function (el) { if (el === current) return; var r = el.getBoundingClientRect(), dx = r.left + r.width / 2 - ax, dy = r.top + r.height / 2 - ay; var primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy; if (primary <= 5) return; var secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx); var value = primary + secondary * 2.5; if (value < score) { score = value; best = el; } });
@@ -911,14 +982,16 @@
       if (key === 13 || key === 32) { event.preventDefault(); if (video.paused) video.play(); else video.pause(); return; }
       var pd = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (pd[key]) { event.preventDefault(); moveFocus(pd[key]); return; }
     }
-    if (document.activeElement.tagName === 'INPUT') return; var dirs = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (dirs[key]) { event.preventDefault(); moveFocus(dirs[key]); } else if (key === 13 && document.activeElement.tagName === 'BUTTON') { event.preventDefault(); document.activeElement.click(); }
+    if (document.activeElement.tagName === 'INPUT') return;
+    if ((key === 37 || key === 39) && $('top-menu').contains(document.activeElement)) { event.preventDefault(); moveTopMenu(key === 37 ? 'left' : 'right'); return; }
+    var dirs = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (dirs[key]) { event.preventDefault(); moveFocus(dirs[key]); } else if (key === 13 && document.activeElement.tagName === 'BUTTON') { event.preventDefault(); document.activeElement.click(); }
   });
 
   $('history-open').addEventListener('click', showHistory); $('search-open').addEventListener('click', function () { showBase('search'); if (!state.searchItems.length || state.searchMode !== 'catalog') loadDiscovery(false, false); else $('search-input').focus(); }); $('search-form').addEventListener('submit', function (event) { event.preventDefault(); search($('search-input').value); }); $('filter-open').addEventListener('click', openFilterDialog); $('sort-open').addEventListener('click', openSortDialog); $('filter-apply').addEventListener('click', applyFilters); $('filter-reset').addEventListener('click', resetFilters); $('filter-cancel').addEventListener('click', closeFilterDialog); $('sort-cancel').addEventListener('click', closeSortDialog); Array.from(document.querySelectorAll('.sort-option')).forEach(function (b) { b.addEventListener('click', function () { chooseSort(b.dataset.sort); }); }); $('search-load-more').addEventListener('click', function () { loadDiscovery(true, false); }); $('load-more').addEventListener('click', function () { loadCatalog(state.catalog, true); });
   $('tv-open').addEventListener('click', function () { showBase('tv'); var first = $('tv-view').querySelector('.service-card'); if (first) first.focus(); });
-  $('sport-open').addEventListener('click', function () { showBase('sport'); var first = $('sport-view').querySelector('.service-card'); if (first) first.focus(); });
-  Array.from(document.querySelectorAll('.service-card')).forEach(function (button) { button.addEventListener('click', function () { openExternalService(button.dataset.service, button); }); });
-  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 10 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  $('sport-open').addEventListener('click', function () { showBase('sport'); loadSports(); });
+  Array.from(document.querySelectorAll('[data-tv-url]')).forEach(function (button) { button.addEventListener('click', function () { var url = model.inAppTvUrl(button.dataset.tvUrl); if (!url) { toast('Адрес канала недоступен'); return; } openWebPlayer(url, button.querySelector('strong').textContent, button); }); });
+  $('kinozal-open').addEventListener('click', function () { showBase('kinozal'); if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 24 * 60 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-content-refresh').addEventListener('click', refreshKinozalContent); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
   $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearSeenaCache);
   Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) { button.addEventListener('click', function () { setCacheLimit(Number(button.dataset.cacheMb), button); }); });
   ['kinozal-account-user', 'kinozal-account-pass'].forEach(function (id) {
@@ -929,10 +1002,15 @@
       if (event.keyCode === 13) { event.preventDefault(); event.stopPropagation(); activateKinozalInput(this); }
     });
   });
+  $('search-input').addEventListener('focus', function () { scheduleKinozalKeyboard(this); });
+  $('search-input').addEventListener('click', function () { scheduleKinozalKeyboard(this); });
+  $('search-input').addEventListener('input', function () { clearTimeout(kinozalKeyboardTimer); });
+  $('top-menu').addEventListener('focusin', function (event) { if (event.target.classList.contains('focusable')) centerTopMenuItem(event.target); });
   document.addEventListener('keyboardStateChange', function (event) {
     kinozalSystemKeyboardVisible = Boolean(event.detail && event.detail.visibility);
     if (kinozalSystemKeyboardVisible) hideKinozalKeyboard();
   });
+  $('web-player-back').addEventListener('click', closeWebPlayer);
   $('detail-back').addEventListener('click', back); $('person-back').addEventListener('click', closePerson); $('player-back').addEventListener('click', back); $('play-now').addEventListener('click', chooseSource); $('torrents-open').addEventListener('click', openTorrents); $('detail-kinozal').addEventListener('click', openKinozalSearch); $('kinozal-search-more').addEventListener('click', function(){loadKinozalSearch(true);}); $('kinozal-search-cancel').addEventListener('click', closeKinozalSearch); $('torrent-close').addEventListener('click', closeTorrents); $('favorite-toggle').addEventListener('click', toggleFavorite);
   $('torrserver-settings').addEventListener('click', openServerDialog); $('server-cancel').addEventListener('click', closeServerDialog); $('server-test').addEventListener('click', testServerDialog); $('server-save').addEventListener('click', saveServerDialog);
   $('exit-cancel').addEventListener('click', closeExitDialog); $('exit-confirm').addEventListener('click', exitApp);

@@ -10,13 +10,15 @@
   <div id="app">
     <header class="topbar">
       <div class="brand"><img src="seena.svg" alt="Seena"><span>для webOS</span></div>
-      <nav id="catalog-nav" aria-label="Каталоги"></nav>
-      <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
-      <button id="history-open" class="nav-action focusable" type="button">История</button>
-      <button id="tv-open" class="nav-action focusable" type="button">ТВ-передачи</button>
-      <button id="sport-open" class="nav-action focusable" type="button">Спорт</button>
-      <button id="cache-open" class="nav-action focusable" type="button">Настройки</button>
-      <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
+      <nav id="top-menu" aria-label="Главное меню">
+        <div id="catalog-nav" aria-label="Каталоги"></div>
+        <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
+        <button id="history-open" class="nav-action focusable" type="button">История</button>
+        <button id="tv-open" class="nav-action focusable" type="button">ТВ-передачи</button>
+        <button id="sport-open" class="nav-action focusable" type="button">Спорт</button>
+        <button id="cache-open" class="nav-action focusable" type="button">Настройки</button>
+        <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
+      </nav>
     </header>
 
     <main id="catalog-view" class="view">
@@ -32,6 +34,7 @@
       <section class="search-section">
         <h1>Поиск</h1>
         <form id="search-form"><input id="search-input" class="focusable" type="search" placeholder="Название фильма или сериала" autocomplete="off"><button class="primary focusable" type="submit">Найти</button></form>
+        <div id="search-keyboard" class="kinozal-keyboard search-keyboard" hidden aria-label="Экранная клавиатура Seena"></div>
         <div class="search-tools">
           <button id="filter-open" class="secondary focusable" type="button">Фильтры</button>
           <button id="sort-open" class="secondary focusable" type="button">Сортировка: Популярные</button>
@@ -54,13 +57,25 @@
     <main id="tv-view" class="view" hidden>
       <section class="service-section">
         <div class="section-head"><h1>ТВ-передачи</h1><p class="muted">Бесплатные официальные сервисы</p></div>
-        <p class="service-help">Выберите сервис. Seena откроет его в браузере телевизора; кнопка Back вернёт вас в приложение.</p>
+        <p class="service-help">Выберите канал. Просмотр откроется внутри Seena; для бесплатных каналов НТВ-ПЛЮС может понадобиться один раз войти в аккаунт.</p>
         <div class="service-grid">
-          <button class="service-card service-card-tv focusable" type="button" data-service="peers">
-            <strong>Peers.TV</strong><span>Эфирные телеканалы, передачи и архив выпусков. Часть каналов доступна бесплатно без регистрации.</span><small>Открыть официальный сервис →</small>
+          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/pervyj-kanal-hd-233">
+            <strong>Первый канал HD</strong><span>Федеральный эфир, новости, фильмы и передачи.</span><small>Смотреть в Seena →</small>
           </button>
-          <button class="service-card service-card-free focusable" type="button" data-service="ntvplus">
-            <strong>НТВ-ПЛЮС · Бесплатно</strong><span>Федеральные и тематические каналы, фильмы и передачи. Для просмотра нужна бесплатная регистрация.</span><small>Открыть официальный сервис →</small>
+          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/rossiya-1-hd-234">
+            <strong>Россия 1 HD</strong><span>Новости, сериалы, кино и прямой эфир.</span><small>Смотреть в Seena →</small>
+          </button>
+          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/telekompaniya-ntv-hd-287">
+            <strong>НТВ HD</strong><span>Информационные и развлекательные передачи.</span><small>Смотреть в Seena →</small>
+          </button>
+          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/rossiya-24-74">
+            <strong>Россия 24</strong><span>Круглосуточные новости и события.</span><small>Смотреть в Seena →</small>
+          </button>
+          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/rossiya-k-39">
+            <strong>Россия К</strong><span>Культура, театр, музыка и документальные передачи.</span><small>Смотреть в Seena →</small>
+          </button>
+          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/sts-23">
+            <strong>СТС</strong><span>Сериалы, кино и развлекательные программы.</span><small>Смотреть в Seena →</small>
           </button>
         </div>
         <p id="tv-service-status" class="muted service-status-text"></p>
@@ -71,15 +86,8 @@
       <section class="service-section">
         <div class="section-head"><h1>Спорт</h1><p class="muted">Бесплатные официальные трансляции</p></div>
         <p class="service-help">Доступность отдельных соревнований зависит от прав вещателя и региона.</p>
-        <div class="service-grid">
-          <button class="service-card service-card-sport focusable" type="button" data-service="matchtv">
-            <strong>Матч ТВ · Прямой эфир</strong><span>Бесплатный эфир федерального спортивного канала, программа и отдельные открытые трансляции.</span><small>Открыть официальный сервис →</small>
-          </button>
-          <button class="service-card service-card-free focusable" type="button" data-service="ntvplus">
-            <strong>НТВ-ПЛЮС · Бесплатно</strong><span>Матч ТВ и другие бесплатные федеральные каналы после регистрации.</span><small>Открыть официальный сервис →</small>
-          </button>
-        </div>
-        <p id="sport-service-status" class="muted service-status-text"></p>
+        <div id="sport-grid" class="service-grid"></div>
+        <p id="sport-service-status" class="muted service-status-text">Загружаем бесплатные трансляции Матч ТВ…</p>
       </section>
     </main>
 
@@ -88,6 +96,7 @@
         <div class="section-head"><h1>Кинозал · Топ раздач</h1><p id="kinozal-page-info" class="muted"></p></div>
         <div class="kinozal-tools">
           <button id="kinozal-filter-open" class="secondary focusable" type="button">Фильтры</button>
+          <button id="kinozal-content-refresh" class="secondary focusable" type="button">Обновить Top</button>
           <button id="kinozal-account-open" class="secondary focusable" type="button">Аккаунт</button>
           <button id="kinozal-session-refresh" class="secondary focusable" type="button">Обновить сессию</button>
           <span id="kinozal-auth-status" class="server-status">Кинозал: не проверен</span>
@@ -237,6 +246,14 @@
       </div>
     </section>
 
+    <section id="web-player-view" class="web-player-view" hidden aria-label="Онлайн-трансляция">
+      <div class="web-player-top">
+        <button id="web-player-back" class="text-button focusable" type="button">← Назад</button>
+        <strong id="web-player-title"></strong>
+      </div>
+      <iframe id="web-player-frame" title="Онлайн-трансляция" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
+    </section>
+
 
     <section id="filter-dialog" class="dialog-backdrop" hidden aria-label="Фильтры поиска">
       <div class="dialog-card search-dialog-card">
@@ -343,7 +360,7 @@
     <section id="cache-dialog" class="dialog-backdrop" hidden aria-label="Настройки кэша Seena">
       <div class="dialog-card cache-card">
         <h2>Кэш карточек</h2>
-        <p class="muted">Seena сохраняет страницы Кинозала, карточки актёров и их фильмографию для быстрого повторного открытия. Фотографии, видео и файлы .torrent здесь не хранятся.</p>
+        <p class="muted">Seena сохраняет страницы Кинозала, связи карточек с раздачами, файлы .torrent, карточки актёров и их фильмографию. Видео в этот кэш не входит.</p>
         <p id="cache-usage" class="detail-meta">Загружаем сведения о кэше…</p>
         <h3>Максимальный размер</h3>
         <div id="cache-sizes" class="choice-row">
@@ -351,6 +368,8 @@
           <button class="cache-size choice-button focusable" type="button" data-cache-mb="4">4 МБ</button>
           <button class="cache-size choice-button focusable" type="button" data-cache-mb="8">8 МБ</button>
           <button class="cache-size choice-button focusable" type="button" data-cache-mb="16">16 МБ</button>
+          <button class="cache-size choice-button focusable" type="button" data-cache-mb="32">32 МБ</button>
+          <button class="cache-size choice-button focusable" type="button" data-cache-mb="64">64 МБ</button>
         </div>
         <p id="cache-status" class="muted"></p>
         <div class="dialog-actions">

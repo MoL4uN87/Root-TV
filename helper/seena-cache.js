@@ -2,14 +2,14 @@
 var fs = require('fs');
 var path = require('path');
 var crypto = require('crypto');
-var LIMITS = [0, 4, 8, 16];
+var LIMITS = [0, 4, 8, 16, 32, 64];
 
 function SeenaCache(root, options) {
   this.root = root;
   this.dir = path.join(root, 'cache');
   this.settingsFile = path.join(root, 'cache-settings.json');
   this.now = options && options.now || Date.now;
-  this.limitMb = 8;
+  this.limitMb = 32;
   try {
     var saved = JSON.parse(fs.readFileSync(this.settingsFile, 'utf8'));
     if (LIMITS.indexOf(saved.limitMb) !== -1) this.limitMb = saved.limitMb;

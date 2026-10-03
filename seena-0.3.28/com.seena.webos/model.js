@@ -262,6 +262,27 @@
       .replace(/\s*\((?:19|20)\d{2}[^)]*\)\s*$/i, '').trim();
   }
 
+  function kinozalSearchQueries(value) {
+    var parts = String(value || '').split(/\s+\/\s+/), out = [];
+    parts.slice(0, 2).forEach(function (part) {
+      var title = part
+        .replace(/\s*\((?:сериал\s*)?(?:19|20)\d{2}[^)]*\)\s*$/i, '')
+        .replace(/\s*\[(?:19|20)\d{2}[^\]]*\]\s*$/i, '')
+        .trim();
+      if (title && !/^(?:19|20)\d{2}$/.test(title) && out.indexOf(title) < 0) out.push(title);
+    });
+    return out.length ? out : (kinozalSearchTitle(value) ? [kinozalSearchTitle(value)] : []);
+  }
+
+  function kinozalActorNames(value) {
+    var out = [];
+    String(value || '').replace(/\([^)]*\)/g, '').split(/\s*,\s*|\s+и\s+/i).forEach(function (part) {
+      var name = part.replace(/\s+/g, ' ').trim();
+      if (name && name.split(' ').length >= 2 && out.indexOf(name) < 0) out.push(name);
+    });
+    return out;
+  }
+
   function normalizedTitle(value) {
     return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, '');
   }
@@ -281,6 +302,58 @@
     }).sort(function (a, b) { return b.score - a.score; });
     return ranked.length && ranked[0].score >= 50 ? ranked[0].item : null;
   }
+
+  function bestCatalogMatchAny(response, titles, year, mediaType) {
+    var best = null;
+    (titles || []).some(function (title) {
+      best = bestCatalogMatch(response, title, year, mediaType);
+      return Boolean(best);
+    });
+    return best;
+  }
+
+  function normalizedPersonName(value) {
+    return String(value || '').toLowerCase().replace(/ё/g, 'е')
+      .replace(/[aceopxykmtbh]/g, function (letter) {
+        return ({ a:'а', c:'с', e:'е', o:'о', p:'р', x:'х', y:'у', k:'к', m:'м', t:'т', b:'в', h:'н' })[letter];
+      }).replace(/[^а-я0-9]+/g, '');
+  }
+
+  function bestDetailByCast(details, actorNames) {
+    var wanted = (actorNames || []).map(normalizedPersonName).filter(Boolean), best = null, bestScore = 0;
+    (details || []).forEach(function (detail) {
+      var actual = castItems(detail).map(function (person) { return normalizedPersonName(person.name); });
+      var score = wanted.reduce(function (sum, name) { return sum + (actual.indexOf(name) >= 0 ? 1 : 0); }, 0);
+      if (score > bestScore) { bestScore = score; best = detail; }
+    });
+    return best;
+  }
+
+  function horizontalNavigationIndex(current, direction, length) {
+    if (!length) return -1;
+    var next = Number(current) + (direction === 'left' ? -1 : direction === 'right' ? 1 : 0);
+    return Math.max(0, Math.min(length - 1, next));
+  }
+
+  function matchBroadcastItems(response) {
+    var rows = response && response.result && Array.isArray(response.result.broadcasts) ? response.result.broadcasts : [];
+    return rows.filter(function (row) { return row && !row.isPaid && row.mediaId; }).map(function (row) {
+      return { id: String(row.mediaId), title: row.title || row.subtitle || 'Трансляция', subtitle: row.subtitle || '',
+        channel: row.channel || '', startAt: row.startAt || '', finishAt: row.finishAt || '', live: Boolean(row.isLive),
+        image: imageUrl(row.imageUrl || '', 'w780') };
+    }).sort(function (a, b) { if (a.live !== b.live) return a.live ? -1 : 1; return String(a.startAt).localeCompare(String(b.startAt)); });
+  }
+
+  function approvedUrl(value, hostname, pathPattern) {
+    try { var parsed = new URL(String(value || '')); return parsed.protocol === 'https:' && parsed.hostname === hostname && pathPattern.test(parsed.pathname) ? parsed.href : ''; }
+    catch (_) { return ''; }
+  }
+
+  function matchPlayerUrl(response) {
+    return approvedUrl(response && response.result && response.result.playerUrl, 'video.matchtv.ru', /^\/iframe\//);
+  }
+
+  function inAppTvUrl(value) { return approvedUrl(value, 'ntvplus.tv', /^\/(?:channel\/|free\/?$)/); }
 
   return {
     BASE: BASE,
@@ -304,6 +377,14 @@
     personUrl: personUrl,
     personCreditsUrl: personCreditsUrl,
     kinozalSearchTitle: kinozalSearchTitle,
-    bestCatalogMatch: bestCatalogMatch
+    kinozalSearchQueries: kinozalSearchQueries,
+    kinozalActorNames: kinozalActorNames,
+    bestCatalogMatch: bestCatalogMatch,
+    bestCatalogMatchAny: bestCatalogMatchAny,
+    bestDetailByCast: bestDetailByCast,
+    horizontalNavigationIndex: horizontalNavigationIndex,
+    matchBroadcastItems: matchBroadcastItems,
+    matchPlayerUrl: matchPlayerUrl,
+    inAppTvUrl: inAppTvUrl
   };
 }));
