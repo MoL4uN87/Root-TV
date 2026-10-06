@@ -1,93 +1,211 @@
-# Root на LG webOS TV
+# Установка ROOT на LG webOS TV
 
-Этот документ собирает рабочие выводы из чатов проекта **Root TV**. Секреты, пароли и приватные ключи намеренно не сохраняются в репозитории.
+> Проверено на **LG OLED55C1RLA**, webOS 6.x, прошивка **03.53.45**.  
+> Это не универсальная инструкция для всех моделей и прошивок LG. Перед выполнением на другом TV нужно отдельно проверять совместимость.
 
-## Телевизор
+## Что понадобится
 
-- Модель: **LG OLED55C1RLA**.
-- В ранних шагах использовалась прошивка **03.53.45**, webOS 6.x; позже система определялась как **webOS 6.5.3**.
-- Ядро сообщает `aarch64`; часть пользовательского окружения webOS имеет отдельные ABI-ограничения, поэтому бинарники всегда нужно проверять на самом TV.
-- Hostname: `LGwebOSTV`.
+На Windows:
 
-## История root
+- PowerShell 7;
+- Git;
+- Python;
+- телевизор и ПК в одной локальной сети.
 
-### 2026-09-07 — получение root
+В примерах TV имеет IP:
 
-Root был получен через **SlopBro** с использованием Git/PowerShell. После завершения Homebrew Channel показывал:
+```text
+192.168.1.95
+```
+
+Замените его на адрес своего телевизора.
+
+## 1. Проверить доступность телевизора
+
+**Терминал:** Windows PowerShell.
+
+```powershell
+ping 192.168.1.95
+```
+
+Проверить порт, который использует SlopBro:
+
+```powershell
+Test-NetConnection 192.168.1.95 -Port 3000
+```
+
+В рабочем случае:
+
+```text
+TcpTestSucceeded : True
+```
+
+## 2. Скачать SlopBro
+
+**Терминал:** Windows PowerShell.
+
+```powershell
+cd $HOME\Desktop
+git clone https://github.com/throwaway96/slopbro.git
+cd .\slopbro
+```
+
+## 3. Запустить SlopBro
+
+Команда, которая реально использовалась для webOS 6:
+
+```powershell
+python .\slopbro.py --webos-version 6 192.168.1.95
+```
+
+Во время выполнения на телевизоре может появиться запрос на pairing/подтверждение подключения — его нужно принять.
+
+В проверенном сценарии SlopBro:
+
+- подключился к TV;
+- pairing был подтверждён;
+- необходимые файлы были переданы;
+- команда завершилась без ошибки.
+
+## 4. Перезагрузить TV
+
+После завершения SlopBro перезагрузите телевизор.
+
+Откройте **Homebrew Channel**.
+
+В рабочем состоянии отображалось:
 
 ```text
 Root status: ok
 ```
 
-Для этой прошивки старые варианты RootMy.TV/DejaVuln/faultmanager не использовались как основной путь.
-
-### SSH
-
-После root доступен root SSH. В рабочем окружении позднее был настроен отдельный SSH-ключ и алиас `lg-tv`, чтобы автоматизация не требовала ввода пароля.
-
-Рекомендуемая локальная конфигурация использует отдельный ключ, например:
+После получения root в Homebrew Channel был включён:
 
 ```text
-~/.ssh/lg_webos_codex
+Block system updates
 ```
 
-Пароли и приватные ключи в Git не сохраняются.
+Для проверенной конфигурации обновление прошивки после получения root не выполнялось.
 
-## Критические ограничения
+## 5. Проверить SSH root
 
-Никогда не перезаписывать и не заменять системные разделы/компоненты:
+**Терминал:** Windows PowerShell.
 
-- `KERNEL`
-- `ROOTFS`
-- `TVSERVICE`
+```powershell
+ssh root@192.168.1.95
+```
 
-Для приложений использовать штатные механизмы webOS (`com.webos.appInstallService`, `luna-send-pub`) либо безопасное копирование только в writable/persistent каталоги Homebrew и Developer Mode.
-
-Не модифицировать `/etc/ld.so.preload` ради Seena/helper. Не подменять системные библиотеки в `/lib` и `/usr`.
-
-## Persistent-каталоги проекта
-
-В текущей архитектуре используются:
+После успешного входа приглашение выглядело примерно так:
 
 ```text
-/media/developer/apps/usr/palm/applications/com.seena.webos
-/var/lib/webosbrew/seena-helper
-/var/lib/webosbrew/lgvpn
-/var/lib/webosbrew/init.d
+root@LGwebOSTV:~#
 ```
 
-Временные эксперименты допустимы в `/tmp`, но всё, что должно переживать reboot, переносится в persistent-каталог.
+Проверить пользователя:
 
-## Полезные проверки
+```sh
+id
+```
+
+Проверить архитектуру и систему:
 
 ```sh
 uname -a
-id
+uname -m
+cat /etc/os-release
+cat /etc/webos-release 2>/dev/null
+cat /etc/palm-build-info 2>/dev/null
+```
+
+## 6. Настроить вход по SSH-ключу
+
+Пароль root и приватный SSH-ключ **не должны храниться в GitHub**.
+
+Создать отдельный ключ для TV.
+
+**Терминал:** Windows PowerShell.
+
+```powershell
+ssh-keygen -t rsa -b 4096 -f "$env:USERPROFILE\.ssh\lg_webos_codex" -C "codex-lg-webos"
+```
+
+Передать публичный ключ на TV:
+
+```powershell
+Get-Content "$env:USERPROFILE\.ssh\lg_webos_codex.pub" | ssh root@192.168.1.95 'mkdir -p /home/root/.ssh && chmod 700 /home/root/.ssh && cat >> /home/root/.ssh/authorized_keys && chmod 600 /home/root/.ssh/authorized_keys'
+```
+
+Проверить вход по ключу:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\lg_webos_codex" root@192.168.1.95
+```
+
+Для автоматизации проекта удобно настроить SSH alias `lg-tv` в:
+
+```text
+C:\Users\<USER>\.ssh\config
+```
+
+После этого подключение выполняется:
+
+```powershell
+ssh lg-tv
+```
+
+Проверка без запроса пароля:
+
+```powershell
+ssh -o BatchMode=yes lg-tv "echo CODEX_SSH_OK"
+```
+
+Ожидаемый ответ:
+
+```text
+CODEX_SSH_OK
+```
+
+## 7. Важные ограничения
+
+Не перезаписывать системные разделы и компоненты:
+
+```text
+KERNEL
+ROOTFS
+TVSERVICE
+```
+
+Для этого проекта не требуется:
+
+- изменять `/lib`;
+- изменять `/usr`;
+- менять `/etc/ld.so.preload`;
+- перепрошивать системные разделы.
+
+Используются writable/persistent каталоги:
+
+```text
+/var/lib/webosbrew/
+/media/developer/
+```
+
+## 8. Полезные проверки после ROOT
+
+На TV по SSH:
+
+```sh
 ls -l /dev/net/tun
 iptables --version
 ip addr
 ip route
 ```
 
-Для Seena/helper:
+В рабочей конфигурации были подтверждены:
 
-```sh
-curl -fsS http://127.0.0.1:8787/health
+```text
+/dev/net/tun
+iptables 1.6.2
+wlan0
 ```
 
-## Связанные чаты проекта
-
-- **2026-09-07** — root LG C1, SSH, затем настройка системного VPN.
-- **2026-09-16** — фиксация рабочего root/Homebrew и развитие LG VPN 0.2.0.
-- **2026-09-30** — passwordless SSH `lg-tv`, безопасная установка Seena на rooted webOS.
-- **2026-10-04** — persistent Seena helper, startup hook и интеграция с уже установленным LGVPN.
-
-## Что не должно попадать в Git
-
-- приватные SSH-ключи;
-- root-пароли;
-- Kinozal `uid`, `pass`, `cf_clearance`;
-- Hysteria2 password/auth;
-- VLESS UUID/private material;
-- готовые runtime-конфиги с реальными секретами;
-- браузерные cookie-базы.
+ROOT нужен для системного VPN, persistent helper Seena и служебных скриптов.

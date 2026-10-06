@@ -1,22 +1,48 @@
-# VPN на rooted LG webOS TV
+# Установка VPN на rooted LG webOS TV
 
-Документ собирает рабочую конфигурацию LG VPN из чатов проекта Root TV. Значения аутентификации удалены; реальные секреты должны храниться только локально на TV.
+> Проверенная схема проекта: **sing-box + Hysteria2 + TUN** на rooted LG webOS.  
+> Проверено на LG OLED55C1RLA/webOS 6 с root и SSH.
 
-## Почему нужен root
+## Что получится
 
-Обычное webOS-приложение работает в sandbox и не получает системный TUN/routing/iptables. Для VPN всего телевизора использовались root-доступ, `sing-box`, `/dev/net/tun` и системные маршруты.
+После настройки:
 
-## Рабочая конфигурация — 2026-09-07
+- весь нужный IPv4-трафик TV может идти через `tun0`;
+- SSH и локальная сеть остаются доступны через `wlan0`;
+- до самого VPN-сервера создаётся отдельный direct route через обычный шлюз;
+- VPN можно включать и выключать скриптами;
+- конфигурация хранится в persistent-каталоге и переживает reboot.
 
-На TV были подтверждены:
+## 1. Проверить ROOT и TUN
 
-```text
-/dev/net/tun
-iptables 1.6.2
-wlan0
+**Терминал:** Windows PowerShell.
+
+```powershell
+ssh lg-tv
 ```
 
-VPN реализован через **sing-box + Hysteria2**.
+На TV:
+
+```sh
+id
+uname -m
+ls -l /dev/net/tun
+iptables --version
+ip route
+```
+
+В проверенной конфигурации:
+
+```text
+architecture: aarch64
+/dev/net/tun: присутствует
+iptables: 1.6.2
+default route: через wlan0
+```
+
+Без `/dev/net/tun` эта схема не заработает.
+
+## 2. Каталоги VPN
 
 Persistent-каталог:
 
@@ -24,110 +50,263 @@ Persistent-каталог:
 /var/lib/webosbrew/lgvpn/
 ```
 
-Основные элементы:
+Используемая структура:
+
+```text
+/var/lib/webosbrew/lgvpn/bin/
+/var/lib/webosbrew/lgvpn/config/
+/var/lib/webosbrew/lgvpn/log/
+```
+
+Основной бинарник:
 
 ```text
 /var/lib/webosbrew/lgvpn/bin/sing-box
-/var/lib/webosbrew/lgvpn/config/config.json
-/var/lib/webosbrew/lgvpn/config/vpn.json
-/var/lib/webosbrew/lgvpn/log/sing-box.log
-/var/lib/webosbrew/lgvpn/log/vpn.log
 ```
 
-Скрипты управления:
+В рабочем варианте использовался:
 
 ```text
-lgvpn-start
-lgvpn-stop
-lgvpn-status
+sing-box 1.14.0
+ARM64-musl
 ```
 
-В последующей версии LG VPN 0.2.0 настройки сервера/порта сохранялись в `/var/lib/webosbrew/lgvpn/config/`; при изменениях backend делал резервные копии существующих скриптов/конфига.
+Проверка:
 
-## TUN и маршрутизация
+```sh
+/var/lib/webosbrew/lgvpn/bin/sing-box version
+```
 
-Рабочий TUN:
+## 3. Конфигурация Hysteria2
+
+Основной config проекта:
+
+```text
+/var/lib/webosbrew/lgvpn/config/vpn.json
+```
+
+В GitHub нельзя сохранять реальные:
+
+```text
+Hysteria2 password/auth
+VLESS UUID
+private keys
+cookies
+```
+
+В документации и шаблонах использовать placeholders:
+
+```text
+<VPN_SERVER>
+<VPN_PORT>
+<HYSTERIA2_PASSWORD>
+<SNI>
+```
+
+Проверенная сеть TUN:
 
 ```text
 interface: tun0
 address:   172.18.0.1/30
 MTU:       1400
+auto_route: false
+stack:     system
 ```
 
-Для полного IPv4-трафика использовалось разбиение default route:
+`auto_route:false` используется потому, что маршруты на webOS задаются отдельными root-скриптами.
+
+## 4. Скрипты управления
+
+В рабочей установке использовались:
 
 ```text
-0.0.0.0/1      -> tun0
-128.0.0.0/1    -> tun0
+/var/lib/webosbrew/lgvpn/lgvpn-start
+/var/lib/webosbrew/lgvpn/lgvpn-stop
+/var/lib/webosbrew/lgvpn/lgvpn-status
 ```
 
-Маршрут до самого VPN-сервера обязательно остаётся напрямую через `wlan0`, иначе возникает routing loop.
+Позднее backend 0.2.0 также поддерживал изменение endpoint и сохранял backup предыдущих конфигураций.
 
-Также LAN/SSH остаётся direct через `wlan0`, чтобы после включения VPN не потерять управление телевизором.
+### Что делает `lgvpn-start`
 
-Пример логики:
+Логика запуска:
+
+1. определяет обычный gateway TV;
+2. создаёт direct route до VPN endpoint через `wlan0`;
+3. запускает `sing-box`;
+4. ждёт появления `tun0`;
+5. добавляет две IPv4 route через TUN;
+6. направляет выбранные DNS-адреса через TUN.
+
+Рабочая схема маршрутов:
 
 ```text
-VPN server /32 -> gateway on wlan0
-LAN            -> wlan0
-Internet       -> tun0
+<VPN_SERVER_IP>/32 -> обычный gateway через wlan0
+
+0.0.0.0/1          -> tun0
+128.0.0.0/1        -> tun0
+
+1.1.1.1/32         -> tun0
+9.9.9.9/32         -> tun0
 ```
 
-## DNS
+Разделение default route на две `/1` позволяет оставить исходный default route системы и при этом отправить интернет-трафик через VPN.
 
-В рабочем варианте DNS-адреса направлялись через `tun0`:
+### Почему нужен отдельный маршрут до VPN-сервера
+
+Если отправить IP самого Hysteria2-сервера внутрь `tun0`, получится routing loop:
 
 ```text
-1.1.1.1/32 -> tun0
-9.9.9.9/32 -> tun0
+TV -> VPN tunnel -> VPN server -> VPN tunnel -> ...
 ```
 
-При этом системный `/etc/resolv.conf` webOS мог указывать на локальные resolver-адреса (`127.0.0.1` / `::1`), поэтому проверять нужно фактический маршрут DNS-запроса, а не только содержимое файла.
+Поэтому endpoint VPN всегда должен идти напрямую:
 
-## IPv6
+```text
+VPN server -> wlan0
+```
 
-Для предотвращения обхода VPN IPv6 был отключён в ConnMan (`IPv6.Configuration = Method=off`). Публичной IPv6-связности после этого не оставалось; служебные p2p-маршруты могли сохраняться.
+## 5. Запуск
 
-## Проверка ON/OFF
+На TV:
 
-В тестах 2026-09-07 внешний IPv4 менялся после включения VPN, что подтвердило прохождение трафика через туннель. Конкретные публичные IP и VPN credentials намеренно не фиксируются в Git.
+```sh
+/var/lib/webosbrew/lgvpn/lgvpn-start
+```
 
-Проверять состояние можно так:
+Проверить:
 
 ```sh
 /var/lib/webosbrew/lgvpn/lgvpn-status
+```
+
+Также:
+
+```sh
 ip addr show tun0
 ip route
 ```
 
-И отдельно проверить внешний адрес через доверенный сервис определения IP.
+Ожидается наличие:
 
-## Интеграция с Seena
+```text
+tun0
+172.18.0.1/30
+0.0.0.0/1
+128.0.0.0/1
+```
 
-В текущем проекте Seena использует helper `seena-vpn-lease.js` для временного управления уже установленным LGVPN в сценариях, где отдельный источник должен идти напрямую.
+## 6. Остановка
 
-Seena helper не должен хранить Hysteria2 password в исходниках. Он взаимодействует с существующей установкой LGVPN и восстанавливает предыдущее состояние после завершения lease.
+```sh
+/var/lib/webosbrew/lgvpn/lgvpn-stop
+```
 
-Startup hook Seena может убедиться, что LGVPN поднят перед обращением к сетевым источникам, но не должен переписывать VPN config.
+После остановки:
 
-## История чатов
+```sh
+ip addr show tun0
+ip route
+```
 
-- **2026-06-27** — архитектурное обсуждение VPN для webOS: sandbox vs root, sing-box/Xray/Hysteria.
-- **2026-09-07** — рабочий TUN, routing, DNS, IPv6 и Hysteria2 на rooted LG C1.
-- **2026-09-16** — LG VPN 0.1.1 → 0.2.0, UI server/port, persistent backend и direct route до VPN endpoint.
-- **2026-10-04** — интеграция LGVPN с Seena helper и `seena-vpn-lease.js`.
+VPN-маршруты должны исчезнуть, а обычный интернет через `wlan0` восстановиться.
 
-## Безопасность
+## 7. Проверка внешнего IP
+
+Сравните внешний IPv4 до и после запуска VPN.
+
+На TV можно использовать доступный HTTPS-сервис определения IP через `curl`.
+
+Важно: адрес до VPN и после VPN должны отличаться.
+
+## 8. DNS
+
+В рабочей схеме маршруты к публичным DNS направлялись через `tun0`:
+
+```text
+1.1.1.1/32
+9.9.9.9/32
+```
+
+Не следует судить о DNS только по `/etc/resolv.conf`, потому что webOS может использовать локальный resolver.
+
+Проверять нужно фактический сетевой маршрут и работоспособность DNS после включения туннеля.
+
+## 9. IPv6
+
+Чтобы IPv6 не обходил IPv4 VPN, в рабочей конфигурации IPv6 отключался в ConnMan:
+
+```text
+IPv6.Configuration = Method=off
+```
+
+После изменения нужно отдельно проверить, что публичной IPv6-связности нет.
+
+## 10. Persistent запуск
+
+VPN находится в:
+
+```text
+/var/lib/webosbrew/lgvpn
+```
+
+То есть конфигурация и бинарники переживают обычную перезагрузку TV.
+
+Перед автоматическим стартом после reboot сначала убедитесь, что ручные:
+
+```sh
+lgvpn-start
+lgvpn-stop
+lgvpn-status
+```
+
+работают стабильно.
+
+## 11. Интеграция с Seena
+
+В проекте Seena используется:
+
+```text
+helper/seena-vpn-lease.js
+```
+
+Он не должен хранить пароль Hysteria2.
+
+Его задача — работать с уже установленным LGVPN и временно менять сетевой режим для отдельных источников, после чего возвращать предыдущее состояние.
+
+## 12. Диагностика
+
+Если после включения VPN пропал интернет:
+
+```sh
+ip addr show tun0
+ip route
+ps | grep sing-box
+```
+
+Проверьте:
+
+- запущен ли `sing-box`;
+- появился ли `tun0`;
+- есть ли direct route до VPN endpoint;
+- есть ли две `/1` route через `tun0`;
+- не ушёл ли сам VPN endpoint в `tun0`;
+- работает ли DNS.
+
+Если после VPN пропал SSH, первым делом проверять маршрутизацию LAN и `wlan0`.
+
+## 13. Что нельзя публиковать
 
 Никогда не коммитить:
 
 ```text
-Hysteria2 auth/password
-VLESS UUID/private key/shortId
-cookies
+реальный Hysteria2 password
+реальный auth
+VLESS UUID
+private key
+shortId
 SSH private keys
+cookies
 account.json
 cookies.json
 ```
-
-Если credential когда-либо публиковался в чате, issue, log или commit, считать его скомпрометированным и ротировать.
