@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const model = require('../seena-0.3.29/com.seena.webos/model.js');
+const model = require('../seena-0.3.32/com.seena.webos/model.js');
 
 test('free Match TV broadcasts are ordered live first', () => {
   const response = { result: { broadcasts: [
@@ -16,4 +16,8 @@ test('only official embedded player and NTV Plus channel URLs are accepted', () 
   assert.equal(model.matchPlayerUrl({ result: { playerUrl: 'https://evil.example/player' } }), '');
   assert.equal(model.inAppTvUrl('https://ntvplus.tv/channel/pervyj-kanal-hd-233'), 'https://ntvplus.tv/channel/pervyj-kanal-hd-233');
   assert.equal(model.inAppTvUrl('https://ntvplus.tv.evil.example/channel/x'), '');
+  assert.equal(model.iptvStreamUrl({ url: 'https://stream.test/live.m3u8' }), 'https://stream.test/live.m3u8');
+  assert.equal(model.iptvStreamUrl({ url: 'http://stream.test/live.m3u8' }), '');
+  assert.equal(model.matchStreamUrl({ status: 'ready', url: 'https://m3u8.video.matchtv.ru/media/start/ch_ticket/master.m3u8?sr=14' }), 'https://m3u8.video.matchtv.ru/media/start/ch_ticket/master.m3u8?sr=14');
+  assert.equal(model.matchStreamUrl({ status: 'ready', url: 'https://evil.example/master.m3u8' }), '');
 });

@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    foreach ($file in @('runtime/curl-impersonate-a55', 'runtime/armhf-runtime/ld-linux-armhf.so.3', 'helper/seena-kinozal-helper.js', 'helper/seena-cache.js', 'helper/seena-cache-policy.js', 'helper/seena-vpn-lease.js', 'helper/seena-helper-watch', 'helper/seena-restart-app', 'seena-0.3.29/com.seena.webos/appinfo.json')) {
+    foreach ($file in @('runtime/curl-impersonate-a55', 'runtime/armhf-runtime/ld-linux-armhf.so.3', 'helper/seena-kinozal-helper.js', 'helper/seena-cache.js', 'helper/seena-cache-policy.js', 'helper/seena-vpn-lease.js', 'helper/seena-sports-playback.js', 'helper/seena-ime.js', 'helper/seena-iptv.js', 'helper/seena-video-search.js', 'helper/seena-helper-watch', 'helper/seena-restart-app', 'seena-0.3.32/com.seena.webos/appinfo.json')) {
         if (-not (Test-Path -LiteralPath $file)) { throw "Missing $file" }
     }
     if (-not (Test-Path -LiteralPath $Key)) { throw "Missing SSH key: $Key" }
@@ -28,6 +28,10 @@ try {
     CopyToTv 'helper/seena-cache.js' '/var/lib/webosbrew/seena-helper/seena-cache.js'
     CopyToTv 'helper/seena-cache-policy.js' '/var/lib/webosbrew/seena-helper/seena-cache-policy.js'
     CopyToTv 'helper/seena-vpn-lease.js' '/var/lib/webosbrew/seena-helper/seena-vpn-lease.js'
+    CopyToTv 'helper/seena-sports-playback.js' '/var/lib/webosbrew/seena-helper/seena-sports-playback.js'
+    CopyToTv 'helper/seena-ime.js' '/var/lib/webosbrew/seena-helper/seena-ime.js'
+    CopyToTv 'helper/seena-iptv.js' '/var/lib/webosbrew/seena-helper/seena-iptv.js'
+    CopyToTv 'helper/seena-video-search.js' '/var/lib/webosbrew/seena-helper/seena-video-search.js'
     CopyToTv 'helper/seena-helper-watch' '/var/lib/webosbrew/seena-helper/seena-helper-watch'
     CopyToTv 'helper/seena-restart-app' '/var/lib/webosbrew/seena-helper/seena-restart-app'
     CopyToTv 'helper/seena-helper-start' '/var/lib/webosbrew/init.d/seena-helper'
@@ -36,10 +40,10 @@ try {
     }
     Remote 'ln -sfn /var/lib/webosbrew/seena-helper/armhf-runtime/ld-linux-armhf.so.3 /home/r/l; chmod 700 /var/lib/webosbrew/seena-helper/curl-impersonate-a55 /var/lib/webosbrew/init.d/seena-helper; test ! -f /var/lib/webosbrew/seena-helper/cookies.json || chmod 600 /var/lib/webosbrew/seena-helper/cookies.json; LD_LIBRARY_PATH=/var/lib/webosbrew/seena-helper/armhf-runtime:/var/lib/webosbrew/seena-helper /var/lib/webosbrew/seena-helper/curl-impersonate-a55 -V >/dev/null 2>&1'
     Remote 'pkill -f ''^/usr/bin/node /var/lib/webosbrew/seena-helper/seena-kinozal-helper.js$'' || true; i=0; while pgrep -f ''^/usr/bin/node /var/lib/webosbrew/seena-helper/seena-kinozal-helper.js$'' >/dev/null; do i=$((i+1)); if [ "$i" -ge 10 ]; then exit 1; fi; sleep 1; done; /var/lib/webosbrew/init.d/seena-helper; i=0; until curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:8787/health 2>/dev/null; do i=$((i+1)); if [ "$i" -ge 20 ]; then exit 1; fi; sleep 1; done'
-    CopyToTv 'seena-0.3.29/com.seena.webos/.' '/media/developer/apps/usr/palm/applications/com.seena.webos/' $true
+    CopyToTv 'seena-0.3.32/com.seena.webos/.' '/media/developer/apps/usr/palm/applications/com.seena.webos/' $true
     Remote 'chmod 755 /media/developer/apps/usr/palm/applications/com.seena.webos; chmod 644 /media/developer/apps/usr/palm/applications/com.seena.webos/*; su wam -s /bin/sh -c ''head -c 1 /media/developer/apps/usr/palm/applications/com.seena.webos/index.html >/dev/null'''
     Remote 'sh /var/lib/webosbrew/seena-helper/seena-restart-app'
-    Write-Output 'Seena 0.3.29 and persistent Kinozal helper installed.'
+    Write-Output 'Seena 0.3.32 and persistent Kinozal helper installed.'
 } finally {
     Pop-Location
 }

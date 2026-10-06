@@ -1,5 +1,54 @@
+# Build / packages
+*.ipk
+dist/
+build/
+
+# Runtime / backups / temporary files
+runtime/
+backup/
+tmp/
+*.log
+*.core
+*.bak
+*.bak-*
+
+# Cookies / authentication data
 diagnostics/Cookies-yandex-refresh
 diagnostics/kinozal-cookies-refresh.json
-backup/
-dist/
-runtime/
+Cookies-yandex-copy
+Cookies-yandex-refresh
+kinozal-cookies.json
+*cookie-header*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local Kinozal credentials
+**/kinozal-config.json
+
+# Research / captured web artifacts
+yandex-preview*.html
+vk-embed.html
+rutube-player.js
+tv-video-search.json
+
+# Local diagnostic playlists
+diagnostics/*.m3u

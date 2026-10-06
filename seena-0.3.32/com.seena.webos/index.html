@@ -12,9 +12,10 @@
       <div class="brand"><img src="seena.svg" alt="Seena"><span>для webOS</span></div>
       <nav id="top-menu" aria-label="Главное меню">
         <div id="catalog-nav" aria-label="Каталоги"></div>
+        <button id="video-open" class="nav-action focusable" type="button">Видео</button>
         <button id="kinozal-open" class="nav-action kinozal-nav focusable" type="button">Kinozal</button>
         <button id="history-open" class="nav-action focusable" type="button">История</button>
-        <button id="tv-open" class="nav-action focusable" type="button">ТВ-передачи</button>
+        <button id="tv-open" class="nav-action focusable" type="button">IPTV</button>
         <button id="sport-open" class="nav-action focusable" type="button">Спорт</button>
         <button id="cache-open" class="nav-action focusable" type="button">Настройки</button>
         <button id="search-open" class="nav-action focusable" type="button"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Поиск</span></button>
@@ -56,28 +57,9 @@
 
     <main id="tv-view" class="view" hidden>
       <section class="service-section">
-        <div class="section-head"><h1>ТВ-передачи</h1><p class="muted">Бесплатные официальные сервисы</p></div>
-        <p class="service-help">Выберите канал. Просмотр откроется внутри Seena; для бесплатных каналов НТВ-ПЛЮС может понадобиться один раз войти в аккаунт.</p>
-        <div class="service-grid">
-          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/pervyj-kanal-hd-233">
-            <strong>Первый канал HD</strong><span>Федеральный эфир, новости, фильмы и передачи.</span><small>Смотреть в Seena →</small>
-          </button>
-          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/rossiya-1-hd-234">
-            <strong>Россия 1 HD</strong><span>Новости, сериалы, кино и прямой эфир.</span><small>Смотреть в Seena →</small>
-          </button>
-          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/telekompaniya-ntv-hd-287">
-            <strong>НТВ HD</strong><span>Информационные и развлекательные передачи.</span><small>Смотреть в Seena →</small>
-          </button>
-          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/rossiya-24-74">
-            <strong>Россия 24</strong><span>Круглосуточные новости и события.</span><small>Смотреть в Seena →</small>
-          </button>
-          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/rossiya-k-39">
-            <strong>Россия К</strong><span>Культура, театр, музыка и документальные передачи.</span><small>Смотреть в Seena →</small>
-          </button>
-          <button class="service-card service-card-tv focusable" type="button" data-tv-url="https://ntvplus.tv/channel/sts-23">
-            <strong>СТС</strong><span>Сериалы, кино и развлекательные программы.</span><small>Смотреть в Seena →</small>
-          </button>
-        </div>
+        <div class="section-head"><h1>IPTV</h1><p class="muted">Открытые HLS-каналы</p></div>
+        <p class="service-help">Каналы открываются встроенным плеером Seena. Можно добавить свой плейлист M3U.</p>
+        <div class="service-grid" id="iptv-grid"></div>
         <p id="tv-service-status" class="muted service-status-text"></p>
       </section>
     </main>
@@ -88,6 +70,16 @@
         <p class="service-help">Доступность отдельных соревнований зависит от прав вещателя и региона.</p>
         <div id="sport-grid" class="service-grid"></div>
         <p id="sport-service-status" class="muted service-status-text">Загружаем бесплатные трансляции Матч ТВ…</p>
+      </section>
+    </main>
+
+    <main id="video-view" class="view" hidden>
+      <section class="search-section">
+        <div class="section-head"><h1>Видео</h1><p class="muted">Безопасный поиск Яндекс Видео</p></div>
+        <form id="video-search-form"><input id="video-search-input" class="focusable" type="search" placeholder="Что найти в видео" autocomplete="off"><button class="primary focusable" type="submit">Найти</button></form>
+        <div id="video-search-keyboard" class="kinozal-keyboard search-keyboard" hidden aria-label="Экранная клавиатура Seena"></div>
+        <div id="video-grid" class="service-grid video-grid"></div>
+        <p id="video-search-status" class="muted service-status-text">Введите запрос для поиска видео.</p>
       </section>
     </main>
 
@@ -122,6 +114,7 @@
             <div class="detail-actions">
               <button id="kinozal-watch" class="primary focusable" type="button">▶ Смотреть</button>
             </div>
+            <div id="kinozal-personal-rating" class="personal-rating" aria-label="Моя оценка"></div>
             <p id="kinozal-detail-overview">Загрузка карточки…</p>
           </div>
         </div>
@@ -160,6 +153,7 @@
               <button id="detail-kinozal" class="secondary kinozal-inline focusable" type="button">Kinozal</button>
               <button id="favorite-toggle" class="secondary focusable" type="button">♡ В избранное</button>
             </div>
+            <div id="personal-rating" class="personal-rating" aria-label="Моя оценка"></div>
             <p id="detail-overview"></p>
           </div>
         </div>
@@ -250,8 +244,10 @@
       <div class="web-player-top">
         <button id="web-player-back" class="text-button focusable" type="button">← Назад</button>
         <strong id="web-player-title"></strong>
+        <button id="web-ime-open" class="text-button focusable" type="button">⌨ Ввод e-mail</button>
       </div>
-      <iframe id="web-player-frame" title="Онлайн-трансляция" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
+        <iframe id="web-player-frame" title="Онлайн-трансляция" tabindex="0" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
+        <div id="web-ime-keyboard" class="web-ime-keyboard" hidden aria-label="Клавиатура для НТВ-ПЛЮС"></div>
     </section>
 
 
@@ -394,6 +390,8 @@
   </div>
   <script src="model.js"></script>
   <script src="history.js"></script>
+  <script src="iptv-favorites.js"></script>
+  <script src="ratings.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

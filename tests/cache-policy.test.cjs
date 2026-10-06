@@ -6,15 +6,26 @@ const path = require('node:path');
 const Cache = require('../helper/seena-cache.js');
 const policy = require('../helper/seena-cache-policy.js');
 
-test('Kinozal lists remain available from cache after twelve hours', t => {
+test('Kinozal Top cache stays available for ten minutes', t => {
   const now = { value: 1_000 };
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seena-cache-policy-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const cache = new Cache(root, { now: () => now.value });
   const key = cache.makeKey('/kinozal/top', 'page=0');
   cache.put(key, 'page', Buffer.from('cached top'), policy.ttl('/kinozal/top'));
-  now.value += 12 * 60 * 60 * 1000;
+  now.value += 10 * 60 * 1000;
   assert.equal(cache.get(key).toString(), 'cached top');
+});
+
+test('Kinozal Top cache expires after fifteen minutes so new releases appear', t => {
+  const now = { value: 1_000 };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seena-cache-policy-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cache = new Cache(root, { now: () => now.value });
+  const key = cache.makeKey('/kinozal/top', 'page=0');
+  cache.put(key, 'page', Buffer.from('cached top'), policy.ttl('/kinozal/top'));
+  now.value += 16 * 60 * 1000;
+  assert.equal(cache.get(key), null);
 });
 
 test('Kinozal detail and torrent associations remain cached for a week', t => {

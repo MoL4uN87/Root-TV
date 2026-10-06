@@ -102,7 +102,7 @@
 #tv-open,#sport-open,#cache-open,#search-open{margin-left:12px}
 
 /* Official free TV and sport service launchers. */
-#tv-open.active,#sport-open.active{background:#243661;color:#fff}
+#tv-open.active,#sport-open.active,#video-open.active{background:#243661;color:#fff}
 .service-section{padding:52px 64px 80px}
 .service-help{color:#aebbd6;max-width:1100px;line-height:1.5;margin:8px 0 28px}
 .service-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-column-gap:24px;grid-row-gap:24px;max-width:1400px}
@@ -140,5 +140,19 @@
 .web-player-top{height:82px;flex:none;display:flex;align-items:center;padding:14px 28px;background:#08101f;border-bottom:1px solid #243653}
 .web-player-top>*+*{margin-left:22px}.web-player-top strong{font-size:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .web-player-view iframe{display:block;width:100%;flex:1;border:0;background:#000}
+.web-ime-keyboard{position:absolute;z-index:2;right:28px;bottom:24px;width:680px;padding:16px;background:#0c1425ed;border:1px solid #536d9f;border-radius:14px}.web-ime-keyboard p{margin:0 0 12px;font-size:16px}.web-ime-row{display:flex;justify-content:center;gap:7px;margin:7px 0}.web-ime-key{min-width:48px;border:0;border-radius:8px;padding:10px;background:#243a63;color:#fff}.web-ime-wide{min-width:100px}
 .sport-live{display:inline-block;color:#fff;background:#b9273f;border-radius:7px;padding:4px 8px;margin-bottom:10px;font-size:16px}
 .service-card img{display:block;width:100%;height:170px;object-fit:cover;border-radius:10px;margin-bottom:16px;background:#24304a}
+
+/* IPTV favorites are stored locally and remain easy to reach with the remote. */
+.iptv-card-wrap{position:relative;min-width:0}
+.iptv-card-wrap .service-card{width:100%;height:100%}
+.iptv-favorite{position:absolute;top:18px;right:18px;z-index:1;width:52px;height:52px;border:1px solid #a9c4ff;border-radius:50%;background:#102544;color:#ffe783;font-size:32px;line-height:1;box-shadow:0 3px 10px #0008}
+.iptv-favorite:focus{outline:none;background:#315d9b;box-shadow:inset 0 0 0 3px #fff,0 3px 10px #0008}
+
+/* Personal ratings use a compact ten-star control on the title card. */
+.personal-rating{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:18px 0}
+.personal-rating-label{margin-right:10px;color:#dbe6ff;font-size:18px}
+.personal-rating-star{width:36px;height:40px;border:0;border-radius:7px;background:#17263f;color:#61718c;font-size:23px;line-height:1}
+.personal-rating-star.selected{color:#ffd75e;background:#55451d}
+.personal-rating-star:focus{outline:none;color:#fff2aa;background:#476ea8;box-shadow:inset 0 0 0 3px #fff}

@@ -354,7 +354,12 @@
     return approvedUrl(response && response.result && response.result.playerUrl, 'video.matchtv.ru', /^\/iframe\//);
   }
 
+  function matchStreamUrl(response) {
+    return response && response.status === 'ready' ? approvedUrl(response.url, 'm3u8.video.matchtv.ru', /^\/media\/(?:start|playlist)\/.*\.m3u8$/) : '';
+  }
+
   function inAppTvUrl(value) { return approvedUrl(value, 'ntvplus.tv', /^\/(?:channel\/|free\/?$)/); }
+  function iptvStreamUrl(response) { try { var parsed = new URL(String(response && response.url || '')); return parsed.protocol === 'https:' && !parsed.port && !parsed.username && !parsed.password && /\.m3u8$/i.test(parsed.pathname) ? parsed.href : ''; } catch (_) { return ''; } }
 
   return {
     BASE: BASE,
@@ -386,6 +391,8 @@
     horizontalNavigationIndex: horizontalNavigationIndex,
     matchBroadcastItems: matchBroadcastItems,
     matchPlayerUrl: matchPlayerUrl,
-    inAppTvUrl: inAppTvUrl
+    matchStreamUrl: matchStreamUrl,
+    inAppTvUrl: inAppTvUrl,
+    iptvStreamUrl: iptvStreamUrl
   };
 }));

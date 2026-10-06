@@ -1,0 +1,1 @@
+{"id":"com.seena.webos","version":"0.3.33","vendor":"Seena webOS port","type":"web","main":"index.html","title":"Seena","icon":"icon.png","resolution":"1920x1080","bgColor":"#080d19","vendorExtension":{"allowCrossDomain":true},"disableBackHistoryAPI":true,"trustLevel":"netcast","thirdPartyCookiesPolicy":"allow"}
