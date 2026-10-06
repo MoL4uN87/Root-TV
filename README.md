@@ -6,7 +6,8 @@
 
 1. **[Получение ROOT на LG webOS](docs/root-tv.md)** — SlopBro, Homebrew Channel, проверка root и настройка SSH.
 2. **[Установка VPN на LG webOS](docs/vpn-tv.md)** — sing-box + Hysteria2, TUN, маршрутизация, DNS и автозапуск.
-3. **[Установка Seena](docs/seena.md)** — тесты, сборка IPK, установка приложения и persistent helper.
+3. **[Установка TorrServer](docs/torrserver.md)** — IPK, запуск сервера, порт 8090, автозапуск и связь с Seena.
+4. **[Установка Seena](docs/seena.md)** — тесты, сборка IPK, установка приложения и persistent helper.
 
 Дополнительно: **[индекс исследований и связанных чатов](docs/chat-index.md)**.
 
