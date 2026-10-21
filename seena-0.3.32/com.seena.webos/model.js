@@ -79,7 +79,15 @@
   }
 
   function directSources(detail) {
-    var catalog = detail && (detail.stream_lists_veoveo || detail.streamListsVeoveo || detail.stream_lists || detail.streamLists) || {};
+    detail = detail || {};
+    // Android MovieResponse exposes independent stream catalogs. A single ||
+    // fallback hides HDVB, streamCatalog and streamLists when Veoveo exists.
+    var catalogs = [
+      { data: detail.stream_lists_veoveo || detail.streamListsVeoveo, provider: 'Veoveo' },
+      { data: detail.stream_lists_hdvb || detail.streamListsHdvb, provider: 'HDVB' },
+      { data: detail.stream_lists || detail.streamLists, provider: 'Seena' },
+      { data: detail.stream_catalog || detail.streamCatalog, provider: 'Каталог' }
+    ];
     var out = [], seen = {};
     var qualityRank = {'2160p': 90, '1440p': 80, '1080p': 70, '720p': 60, '480p': 50, '360p': 40, '240p': 30, '144p': 20, 'авто': 10};
 
@@ -124,13 +132,36 @@
       });
     }
 
-    (catalog.movieVoices || catalog.movie_voices || catalog.apiVoices || catalog.api_voices || []).forEach(function (voice) { addVoice(voice, '', null); });
-    (catalog.seasons || []).forEach(function (season) {
-      (season.episodes || []).forEach(function (episode) {
-        var seasonNumber = first(season, ['seasonNumber', 'season_number'], first(episode, ['seasonNumber', 'season_number'], null));
-        var episodeNumber = first(episode, ['episodeNumber', 'episode_number', 'number'], '?');
-        var label = 'Сезон ' + (seasonNumber || '?') + ' · Серия ' + episodeNumber;
-        (episode.voices || episode.apiVoices || episode.api_voices || []).forEach(function (voice) { addVoice(voice, label, seasonNumber); });
+    var visited = [];
+    catalogs.forEach(function (entry) {
+      var catalog = entry.data;
+      if (!catalog || typeof catalog !== 'object' || visited.indexOf(catalog) >= 0) return;
+      visited.push(catalog);
+      function useVoice(voice, prefix, seasonNumber) {
+        // Keep explicit provider from API, otherwise use the catalog origin.
+        if (voice && typeof voice === 'object' && !providerOf(voice)) {
+          voice = Object.assign({}, voice, { provider: entry.provider });
+        }
+        addVoice(voice, prefix, seasonNumber);
+      }
+      if (Array.isArray(catalog)) {
+        catalog.forEach(function (voice) { useVoice(voice, '', null); }); return;
+      }
+      // Android lists may be present under multiple aliases at once.
+      ['movieVoices', 'movie_voices', 'apiVoices', 'api_voices', 'voices'].forEach(function (key) {
+        if (Array.isArray(catalog[key])) catalog[key].forEach(function (voice) { useVoice(voice, '', null); });
+      });
+      if (!Array.isArray(catalog.seasons)) return;
+      catalog.seasons.forEach(function (season) {
+        if (!Array.isArray(season.episodes)) return;
+        season.episodes.forEach(function (episode) {
+          var seasonNumber = first(season, ['seasonNumber', 'season_number'], first(episode, ['seasonNumber', 'season_number'], null));
+          var episodeNumber = first(episode, ['episodeNumber', 'episode_number', 'number'], '?');
+          var label = 'Сезон ' + (seasonNumber == null ? '?' : seasonNumber) + ' · Серия ' + episodeNumber;
+          ['voices', 'apiVoices', 'api_voices'].forEach(function (key) {
+            if (Array.isArray(episode[key])) episode[key].forEach(function (voice) { useVoice(voice, label, seasonNumber); });
+          });
+        });
       });
     });
     out.sort(function (a, b) { var c = a.label.localeCompare(b.label, 'ru'); return c || b.qualityRank - a.qualityRank; });
