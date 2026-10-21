@@ -167,3 +167,18 @@
 .poster-trailer:hover,.poster-trailer:focus{background:#708ef8;color:#fff;outline:3px solid #fff;outline-offset:2px}
 .poster-trailer:disabled{opacity:.7;cursor:progress}
 @media(max-width:850px){.poster-trailer{width:40px;height:40px;font-size:19px;top:7px;right:7px}}
+
+/* Seena API torrent tracker, size, seeds: readable from a living-room distance. */
+.seena-torrent-card{display:block;width:100%;min-height:142px;padding:20px 22px}
+.seena-torrent-card .torrent-release-name{display:block;font-size:21px;line-height:1.35;overflow-wrap:break-word}
+.seena-torrent-card .torrent-release-info{display:block;font-size:17px;color:#b8c9ee;margin-top:7px;line-height:1.4}
+.torrent-meta-row{display:flex;flex-wrap:wrap;margin-top:13px}
+.torrent-meta-badge{display:inline-block;margin:0 10px 10px 0;padding:8px 12px;
+  font-size:18px;line-height:1.25;border:1px solid #4a6285;border-radius:9px;
+  color:#e5efff;background:#233652}
+.torrent-meta-platform{background:#294268;border-color:#7094ce;color:#ecf5ff;font-weight:bold}
+.torrent-meta-size{background:#323651;border-color:#646d97;color:#e3eaff}
+.torrent-meta-seeders{background:#1a4332;border-color:#467e60;color:#a6f6bf;font-weight:bold}
+.torrent-meta-peers{background:#493329;border-color:#8e6250;color:#ffd8bb}
+.seena-torrent-card:focus .torrent-meta-badge{border-color:#c7d8ff}
+@media(max-width:1350px){.seena-torrent-card{min-height:125px}}
