@@ -42,7 +42,7 @@
           player = new YT.Player('player', {
             videoId: videoId,
             playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1,
-              fs: 1, iv_load_policy: 3, enablejsapi: 1 },
+              fs: 1, iv_load_policy: 3, enablejsapi: 1, origin: location.origin },
             events: {
               onReady: function (event) {
                 tell('');
@@ -54,9 +54,14 @@
                     duration: player.getDuration() || 0 }); } catch (_) {}
                 }, 500);
               },
-              onError: function () {
-                tell('YouTube не разрешил воспроизвести этот трейлер. Нажмите «Назад».');
-                notify('error');
+              onError: function (event) {
+                var code = Number(event && event.data) || 0;
+                var reason = code === 153 ? 'Не передан HTTP Referer'
+                  : (code === 101 || code === 150) ? 'Автор запретил встраивание'
+                  : code === 100 ? 'Ролик удалён или закрыт'
+                  : code === 5 ? 'Плеер не поддерживается' : 'Ошибка видеоплеера';
+                tell('YouTube ' + code + ': ' + reason + '. Нажмите «Назад».');
+                notify('error', { code: code });
               }
             }
           });
