@@ -490,6 +490,72 @@
     return null;
   }
 
+  // Collect official film trailers across the API metadata. Russian variants rank
+  // first when the API actually marks them ru or explicitly names the dubbing.
+  // A Russian title alone does not prove the video has a Russian audio track.
+  function trailerCandidates(detail, item) {
+    var objects = [detail || {}, item && item.raw || {}, item || {}], result = [], byId = {};
+    function normalizeLanguage(value, title) {
+      var raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+      if (/^(ru|rus|ru-)/.test(raw)) return 'ru';
+      if (/^(en|eng|en-)/.test(raw)) return 'en';
+      if (/^[a-z]{2}(?:-[a-z]{2})?$/.test(raw)) return raw.slice(0, 2);
+      var hint = String(title || '').toLowerCase();
+      if (/русск|на русском|дубляж|дублирован|русская озвучка|russian dubbed|russian trailer/.test(hint)) return 'ru';
+      if (/\benglish\b|\boriginal language\b|\beng dub\b/i.test(hint)) return 'en';
+      return '';
+    }
+    function add(entry, priority, requiredType) {
+      if (!entry) return;
+      if (typeof entry === 'object' && requiredType) {
+        var type = String(entry.type || entry.video_type || entry.videoType || '').trim();
+        if (type && !/^(trailer|teaser|трейлер|тизер)$/i.test(type)) return;
+      }
+      var video = trailerMedia(entry);
+      if (!video || video.mode !== 'youtube') return;
+      var name = typeof entry === 'object' ? String(first(entry,
+        ['name', 'title', 'label'], '')).trim() : '';
+      var lang = typeof entry === 'object' ? normalizeLanguage(first(entry,
+        ['iso_639_1', 'iso639_1', 'language', 'lang', 'audio_language', 'audioLanguage'], ''), name)
+        : '';
+      var official = Boolean(entry && typeof entry === 'object' && entry.official === true);
+      var existing = byId[video.videoId];
+      if (existing) {
+        if (!existing.lang && lang) existing.lang = lang;
+        if (!existing.name && name) existing.name = name.slice(0, 90);
+        if (official) existing.official = true;
+        return;
+      }
+      var candidate = { mode: 'youtube', videoId: video.videoId, lang: lang,
+        name: name.slice(0, 90), official: official, rank: priority };
+      byId[video.videoId] = candidate;
+      result.push(candidate);
+    }
+    objects.forEach(function (obj) {
+      if (!obj || typeof obj !== 'object') return;
+      ['trailer', 'trailer_url', 'trailerUrl', 'trailer_link', 'trailerLink',
+        'youtube_trailer_url', 'youtubeTrailerUrl'].forEach(function (key) {
+        add(obj[key], 2, false);
+      });
+      if (obj.youtube_id || obj.youtubeId)
+        add({ site: 'YouTube', key: obj.youtube_id || obj.youtubeId }, 1, false);
+      var arrays = [obj.videos && (obj.videos.results || obj.videos.data || obj.videos),
+        obj.trailers && (obj.trailers.results || obj.trailers.data || obj.trailers)];
+      arrays.forEach(function (items) {
+        if (Array.isArray(items)) items.forEach(function (v) { add(v, 3, true); });
+      });
+    });
+    result.sort(function (a, b) {
+      var aRank = (a.lang === 'ru' ? 100 : 0) + (a.official ? 20 : 0) + a.rank;
+      var bRank = (b.lang === 'ru' ? 100 : 0) + (b.official ? 20 : 0) + b.rank;
+      return bRank - aRank;
+    });
+    return result.slice(0, 12).map(function (v) {
+      return { mode: v.mode, videoId: v.videoId, lang: v.lang,
+        name: v.name, official: v.official };
+    });
+  }
+
   function trailerSearchQuery(item) {
     var name = String(item && item.title || '').split(/\s+\/\s+/)[0].trim();
     var year = String(item && item.year || '').match(/(?:19|20)\d{2}/);
@@ -586,6 +652,7 @@
     inAppTvUrl: inAppTvUrl,
     iptvStreamUrl: iptvStreamUrl,
     trailerSource: trailerSource,
+    trailerCandidates: trailerCandidates,
     trailerSearchQuery: trailerSearchQuery,
     trailerSearchResults: trailerSearchResults
   };
