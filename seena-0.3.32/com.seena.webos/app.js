@@ -84,6 +84,15 @@
       }));
     });
   }
+  function posterTile(item, card, isKinozal) {
+    // Do not nest two buttons: the poster opens details, the overlay plays its trailer.
+    var tile = document.createElement('div'); tile.className = 'poster-tile';
+    var play = makeButton('▶', 'poster-trailer', function () { openCardTrailer(item, play, isKinozal); });
+    play.title = 'Трейлер: ' + item.title;
+    play.setAttribute('aria-label', 'Смотреть трейлер: ' + item.title);
+    tile.append(card, play);
+    return tile;
+  }
   function renderCard(item, role) {
     var b = document.createElement('button'); b.type = 'button'; b.className = 'poster-card focusable';
     var img = document.createElement('img'); img.alt = ''; img.loading = 'lazy'; if (safeImage(item.poster)) setImage(img, item.poster);
@@ -94,7 +103,7 @@
     meta.textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм', rating, personalRating ? 'Моя оценка ' + personalRating + '/10' : ''].filter(Boolean).join(' · ');
     copy.append(title, meta);
     if (role) { var rr = document.createElement('span'); rr.className = 'poster-role'; rr.textContent = role; copy.appendChild(rr); }
-    b.append(img, copy); b.addEventListener('click', function () { openDetail(item, b); }); return b;
+    b.append(img, copy); b.addEventListener('click', function () { openDetail(item, b); }); return posterTile(item, b, false);
   }
   function renderHero(item) {
     var hero = $('hero'); clear(hero); hero.style.backgroundImage = safeImage(item && item.backdrop) ? 'url("' + item.backdrop.replace(/"/g, '%22') + '")' : '';
@@ -285,7 +294,8 @@
     });
     return state.sportNetworkRestore;
   }
-  function openWebPlayer(url, title, trigger) {
+  function openWebPlayer(url, title, trigger, isTrailer) {
+    $('web-ime-open').hidden = Boolean(isTrailer);
     state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = title || 'Онлайн-трансляция';
     $('web-ime-keyboard').hidden = true;
     $('web-player-frame').onload = function () { if (!$('web-player-view').hidden) $('web-player-frame').focus(); };
@@ -293,7 +303,7 @@
   }
   function closeWebPlayer() {
     if (!$('web-player-view') || $('web-player-view').hidden) return;
-    $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank'; $('web-ime-keyboard').hidden = true;
+    $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank'; $('web-ime-keyboard').hidden = true; $('web-ime-open').hidden = false;
     var trigger = state.webPlayerTrigger; state.webPlayerTrigger = null;
     if (trigger && document.body.contains(trigger)) trigger.focus();
   }
@@ -435,6 +445,53 @@
       button.disabled = false;
     }
   }
+
+  async function openCardTrailer(item, button, isKinozal) {
+    if (button.disabled) return;
+    var requestId = (state.trailerRequestId || 0) + 1; state.trailerRequestId = requestId;
+    button.disabled = true; button.textContent = '…';
+    toast('Ищем трейлер: ' + item.title);
+    try {
+      var source = model.trailerSource(null, item);
+      if (!source && !isKinozal) {
+        try {
+          var detail = state.detailItem && state.detailItem.id === item.id && state.detail
+            ? state.detail : await fetchJson(model.detailUrl(item.id));
+          source = model.trailerSource(detail, item);
+        } catch (_) { /* If movie details are unavailable, fall back to video search. */ }
+      }
+      if (requestId !== state.trailerRequestId || !document.body.contains(button)) return;
+      if (source) {
+        if (source.mode === 'embed') openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
+        else playSource({ title: item.title, label: 'Трейлер', url: source.url, history: false,
+          trigger: button, backLabel: '← К карточке' });
+        return;
+      }
+      // Use the existing TV video provider; never choose an arbitrary search hit.
+      var results = await fetchJson(KZ_HELPER + '/video/search?q=' +
+        encodeURIComponent(model.trailerSearchQuery(item)));
+      if (requestId !== state.trailerRequestId || !document.body.contains(button)) return;
+      var matches = model.trailerSearchResults(results.items, item);
+      if (!matches.length) throw new Error('Подходящий трейлер не найден');
+      for (var i = 0; i < Math.min(matches.length, 5); i += 1) {
+        var video;
+        try { video = await fetchJson(KZ_HELPER + '/video/playback?url=' + encodeURIComponent(matches[i].preview)); }
+        catch (_) { continue; }
+        if (requestId !== state.trailerRequestId || !document.body.contains(button)) return;
+        if (!video || video.status !== 'ready' || !video.url) continue;
+        if (video.mode === 'embed') openWebPlayer(video.url, item.title + ' · Трейлер', button, true);
+        else playSource({ title: item.title, label: 'Трейлер', url: video.url,
+          type: video.type || '', history: false, trigger: button, backLabel: '← К карточке' });
+        return;
+      }
+      throw new Error('Найденные трейлеры недоступны для воспроизведения');
+    } catch (error) {
+      if (requestId === state.trailerRequestId) toast('Трейлер: ' + error.message);
+    } finally {
+      button.disabled = false; button.textContent = '▶';
+    }
+  }
+
   async function searchVideo(query) {
     query = String(query || '').trim(); if (!query) { $('video-search-status').textContent = 'Введите запрос для поиска видео.'; return; }
     showBase('video'); clear($('video-grid')); $('video-search-status').textContent = 'Ищем видео…';
@@ -582,7 +639,7 @@
     var copy = document.createElement('div'); copy.className = 'poster-copy'; var title = document.createElement('strong'); title.textContent = item.title;
     var meta = document.createElement('small'), personalRating = ratings && ratings.get(localStorage, item.id); meta.textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм', personalRating ? 'Моя оценка ' + personalRating + '/10' : ''].filter(Boolean).join(' · ');
     var fmt = document.createElement('span'); fmt.className = 'kz-format'; fmt.textContent = item.format || '';
-    copy.append(title, meta, fmt); b.append(img, copy); b.addEventListener('click', function () { openKinozalDetail(item, b); }); return b;
+    copy.append(title, meta, fmt); b.append(img, copy); b.addEventListener('click', function () { openKinozalDetail(item, b); }); return posterTile(item, b, true);
   }
   function renderHistory() {
     var items = history.read(localStorage), grid = $('history-grid'); clear(grid);
@@ -1152,6 +1209,7 @@
     if (!delta) return;
     event.preventDefault();
     var current = document.activeElement, chosen = null;
+    if (current.classList && current.classList.contains('poster-trailer')) current = current.parentNode.querySelector('.poster-card') || current;
     if (cards.indexOf(current) < 0) chosen = delta > 0 ? cards[0] : cards[cards.length - 1];
     else {
       var rect = current.getBoundingClientRect(), cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2, score = Infinity;
@@ -1182,6 +1240,11 @@
       var pd = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (pd[key]) { event.preventDefault(); moveFocus(pd[key]); return; }
     }
     if (document.activeElement.tagName === 'INPUT') return;
+    // The Play key on the remote launches the trailer of the focused poster.
+    if (key === 415 && document.activeElement.classList.contains('poster-card')) {
+      var trailer = document.activeElement.parentNode.querySelector('.poster-trailer');
+      if (trailer) { event.preventDefault(); trailer.click(); return; }
+    }
     if ((key === 37 || key === 39) && $('top-menu').contains(document.activeElement)) { event.preventDefault(); moveTopMenu(key === 37 ? 'left' : 'right'); return; }
     var dirs = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (dirs[key]) { event.preventDefault(); moveFocus(dirs[key]); } else if (key === 13 && document.activeElement.tagName === 'BUTTON') { event.preventDefault(); document.activeElement.click(); }
   });
