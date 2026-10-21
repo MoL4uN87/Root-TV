@@ -336,6 +336,99 @@
     return Math.max(0, Math.min(length - 1, next));
   }
 
+
+  // A film may expose its trailer in the catalog row, the detail response or TMDB-style videos.
+  // Only known video formats/YouTube hosts are accepted; do not embed arbitrary page URLs.
+  function trailerMedia(value) {
+    if (value && typeof value === 'object') {
+      if (String(value.site || '').toLowerCase() === 'youtube' && /^[A-Za-z0-9_-]{11}$/.test(String(value.key || '')))
+        return { mode: 'embed', url: 'https://www.youtube.com/embed/' + value.key + '?autoplay=1' };
+      return trailerMedia(value.url || value.link || value.src || '');
+    }
+    if (typeof value !== 'string') return null;
+    try {
+      var url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+      var host = url.hostname.toLowerCase(), id = '';
+      if (host === 'youtu.be') id = url.pathname.slice(1);
+      else if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com' || host === 'www.youtube-nocookie.com') {
+        if (url.pathname === '/watch') id = url.searchParams.get('v') || '';
+        else if (/^\/(?:embed|shorts)\//.test(url.pathname)) id = url.pathname.split('/')[2] || '';
+      }
+      if (id && /^[A-Za-z0-9_-]{11}$/.test(id))
+        return { mode: 'embed', url: 'https://www.youtube.com/embed/' + id + '?autoplay=1' };
+      if (/\.(?:mp4|m3u8)$/i.test(url.pathname))
+        return { mode: 'direct', url: url.href };
+    } catch (_) {}
+    return null;
+  }
+
+  function trailerSource(detail, item) {
+    var objects = [detail || {}, item && item.raw || {}, item || {}], fields = [
+      'trailer_url', 'trailerUrl', 'trailer', 'trailer_link', 'trailerLink',
+      'youtube_trailer_url', 'youtubeTrailerUrl'
+    ];
+    for (var i = 0; i < objects.length; i += 1) {
+      var obj = objects[i];
+      for (var f = 0; f < fields.length; f += 1) {
+        var source = trailerMedia(obj[fields[f]]);
+        if (source) return source;
+      }
+      var youtubeId = obj.youtube_id || obj.youtubeId;
+      if (youtubeId) {
+        var byId = trailerMedia({ site: 'YouTube', key: youtubeId });
+        if (byId) return byId;
+      }
+      var videos = obj.videos && (obj.videos.results || obj.videos.data || obj.videos);
+      if (!Array.isArray(videos)) continue;
+      var trailers = videos.filter(function (v) {
+        return v && /^(trailer|teaser|трейлер|тизер)$/i.test(String(v.type || v.video_type || ''));
+      }).sort(function (a, b) {
+        return (b.official === true ? 1 : 0) - (a.official === true ? 1 : 0);
+      });
+      for (var j = 0; j < trailers.length; j += 1) {
+        var video = trailerMedia(trailers[j]);
+        if (video) return video;
+      }
+    }
+    return null;
+  }
+
+  function trailerSearchQuery(item) {
+    var name = String(item && item.title || '').split(/\s+\/\s+/)[0].trim();
+    var year = String(item && item.year || '').match(/(?:19|20)\d{2}/);
+    return [name, year ? year[0] : '', 'трейлер'].filter(Boolean).join(' ').slice(0, 120);
+  }
+
+  function trailerNormalize(value) {
+    return ' ' + String(value || '').toLowerCase().replace(/ё/g, 'е')
+      .replace(/[^a-z0-9а-я]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+  }
+
+  function trailerSearchResults(results, item) {
+    var raw = item && item.raw || {}, name = String(item && item.title || '').split(/\s+\/\s+/)[0];
+    var names = [name, raw.original_title, raw.original_name].map(trailerNormalize)
+      .filter(function (v) { return v.trim().length >= 3; });
+    var yearMatch = String(item && item.year || '').match(/(?:19|20)\d{2}/);
+    return (Array.isArray(results) ? results : []).map(function (video) {
+      if (!video || !video.preview || !video.title) return null;
+      var title = trailerNormalize(video.title);
+      if (!/\b(trailer|teaser)\b/.test(title) && !/трейлер|тизер/.test(title)) return null;
+      if (/обзор|реакци|рецензи|разбор|пароди|фанатск|fan made|fanmade|reaction|review|breakdown/.test(title)) return null;
+      var nameLength = 0;
+      names.forEach(function (n) { if (title.indexOf(n) !== -1) nameLength = Math.max(nameLength, n.length - 2); });
+      if (!nameLength) return null;
+      var resultYear = String(video.title).match(/\b(?:19|20)\d{2}\b/);
+      if (nameLength < 5 && (!yearMatch || !resultYear || yearMatch[0] !== resultYear[0])) return null;
+      if (yearMatch && resultYear && Math.abs(Number(yearMatch[0]) - Number(resultYear[0])) > 1) return null;
+      var score = nameLength + (yearMatch && resultYear && yearMatch[0] === resultYear[0] ? 12 : 0)
+        + (/официальн|official/.test(title) ? 6 : 0)
+        + (/трейлер|trailer/.test(title) ? 5 : 0);
+      return { video: video, score: score };
+    }).filter(Boolean).sort(function (a, b) { return b.score - a.score; })
+      .slice(0, 8).map(function (match) { return match.video; });
+  }
+
   function matchBroadcastItems(response) {
     var rows = response && response.result && Array.isArray(response.result.broadcasts) ? response.result.broadcasts : [];
     return rows.filter(function (row) { return row && !row.isPaid && row.mediaId; }).map(function (row) {
@@ -393,6 +486,9 @@
     matchPlayerUrl: matchPlayerUrl,
     matchStreamUrl: matchStreamUrl,
     inAppTvUrl: inAppTvUrl,
-    iptvStreamUrl: iptvStreamUrl
+    iptvStreamUrl: iptvStreamUrl,
+    trailerSource: trailerSource,
+    trailerSearchQuery: trailerSearchQuery,
+    trailerSearchResults: trailerSearchResults
   };
 }));
