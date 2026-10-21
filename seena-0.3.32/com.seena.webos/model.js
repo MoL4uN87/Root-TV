@@ -209,6 +209,62 @@
     };
   }
 
+  // API torrent listings may label a tracker in several ways. Keep the source
+  // label from the API; infer known names from an actual tracker URL only.
+  function torrentPlatform(item) {
+    var keys = ['tracker_name', 'trackerName', 'tracker', 'torrent_tracker',
+      'torrentTracker', 'tracker_title', 'trackerTitle', 'source_name',
+      'sourceName', 'torrent_source', 'torrentSource', 'site_name', 'siteName',
+      'site', 'source', 'provider_name', 'providerName', 'provider',
+      'indexer_name', 'indexerName', 'indexer', 'origin'];
+    function asLabel(value) {
+      if (!value) return '';
+      if (Array.isArray(value)) return asLabel(value[0]);
+      if (typeof value === 'object') return asLabel(first(value,
+        ['name', 'title', 'label', 'site', 'domain', 'url', 'host'], ''));
+      if (typeof value !== 'string') return '';
+      var label = value.trim();
+      if (!label) return '';
+      // Normalize the three common Seena tracker names for the TV labels.
+      if (/bit[.-]?ru/i.test(label)) return 'BitRu';
+      if (/korsars?/i.test(label)) return 'Korsars';
+      if (/lost[.-]?film/i.test(label)) return 'LostFilm';
+      if (/^https?:\/\//i.test(label)) {
+        try { label = new URL(label).hostname.replace(/^www\./i, ''); }
+        catch (_) { return ''; }
+      }
+      if (/^(?:unknown|null|none|torrent|tracker|magnet|n\/a)$/i.test(label)) return '';
+      return label.slice(0, 65);
+    }
+    for (var i = 0; i < keys.length; i += 1) {
+      var name = asLabel(item && item[keys[i]]);
+      if (name) return name;
+    }
+    var trackerUrl = first(item, ['tracker_url', 'trackerUrl', 'site_url', 'siteUrl'], '');
+    return asLabel(trackerUrl);
+  }
+
+  function torrentCount(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'string') value = value.replace(/[\s,]/g, '').trim();
+    var count = Number(value);
+    return isFinite(count) && count >= 0 ? Math.floor(count) : null;
+  }
+
+  function torrentSizeLabel(value) {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'string' && /[^\d\s]/.test(value) && !/^\d+(?:[\s,]\d{3})*$/.test(value.trim()))
+      return value.trim(); // API has already supplied a human-readable unit.
+    var bytes = Number(String(value).replace(/[\s,]/g, ''));
+    if (!isFinite(bytes) || bytes < 0) return '';
+    var units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+    var unit = 0;
+    while (bytes >= 1024 && unit < units.length - 1) { bytes /= 1024; unit += 1; }
+    return (unit === 0 ? String(Math.floor(bytes)) :
+      bytes >= 100 ? bytes.toFixed(0) : bytes >= 10 ? bytes.toFixed(1) : bytes.toFixed(2)) +
+      ' ' + units[unit];
+  }
+
   function torrentItems(response) {
     var rows = [];
     if (Array.isArray(response)) rows = response;
@@ -216,16 +272,21 @@
     else if (response && Array.isArray(response.torrents)) rows = response.torrents;
     else if (response && response.data && Array.isArray(response.data.torrents)) rows = response.data.torrents;
     else if (response && Array.isArray(response.results)) rows = response.results;
-    return rows.map(function (item, index) {
+    return rows.filter(function (item) { return item && typeof item === 'object'; })
+      .map(function (item, index) {
       var quality = first(item, ['quality', 'quality_label', 'qualityLabel'], '');
       return {
         id: String(first(item, ['id', 'torrent_idx', 'torrentIdx'], index)),
         name: first(item, ['name', 'title', 'filename'], 'Торрент'),
         quality: quality ? String(quality) : '',
         voice: first(item, ['voice', 'voice_label', 'voiceLabel'], stringList(first(item, ['voices'], [])).join(', ')),
-        size: first(item, ['size', 'torrent_size', 'torrentSize', 'size_display', 'sizeDisplay'], ''),
-        seeders: Number(first(item, ['seeders', 'seeds'], 0)) || 0,
-        peers: Number(first(item, ['peers', 'leechers'], 0)) || 0,
+        platform: torrentPlatform(item),
+        size: torrentSizeLabel(first(item, ['size_display', 'sizeDisplay',
+          'size', 'torrent_size', 'torrentSize', 'total_size', 'totalSize', 'file_size', 'fileSize'], '')),
+        seeders: torrentCount(first(item, ['seeders', 'seeds', 'seed_count',
+          'seedCount', 'seeders_count', 'seedersCount', 'seed', 'seeder_count', 'seederCount'], null)),
+        peers: torrentCount(first(item, ['peers', 'leechers', 'leechers_count',
+          'leechersCount', 'peer_count', 'peerCount'], null)),
         link: first(item, ['magnet', 'link', 'torrent', 'url'], ''),
         hash: first(item, ['hash', 'info_hash', 'infoHash', 'torrent_ih'], ''),
         raw: item
@@ -470,6 +531,8 @@
     similarItems: similarItems,
     detailFacts: detailFacts,
     torrentItems: torrentItems,
+    torrentPlatform: torrentPlatform,
+    torrentSizeLabel: torrentSizeLabel,
     searchUrl: searchUrl,
     catalogUrl: catalogUrl,
     catalogMetadataUrl: catalogMetadataUrl,
