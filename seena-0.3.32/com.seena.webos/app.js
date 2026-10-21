@@ -897,7 +897,7 @@
   function renderKinozalSearchRelease(release) {
     var b=makeButton('', 'torrent-button kinozal-search-release', function(){playKinozalSearchTorrent(release);});
     var strong=document.createElement('strong'); strong.textContent=release.title; var small=document.createElement('small');
-    small.textContent=[release.quality,release.size,release.seeds||release.peers?'Сиды: '+release.seeds:'',release.peers?'Пиры: '+release.peers:'',release.uploaded].filter(Boolean).join(' · '); b.append(strong,small); return b;
+    small.textContent=['Кинозал',release.quality,release.size?'Размер: '+release.size:'', 'Сиды: '+release.seeds,release.peers?'Пиры: '+release.peers:'',release.uploaded].filter(Boolean).join(' · '); b.append(strong,small); return b;
   }
   async function loadKinozalSearch(append) {
     if (state.kzSearchLoading || !state.kzSearchQuery) return; state.kzSearchLoading=true; var page=append?state.kzSearchPage+1:0;
@@ -971,7 +971,7 @@
   function closeKinozalDetail() { state.trailerRequestId = (state.trailerRequestId || 0) + 1; $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
   function openKinozalTorrents() {
     if(!state.kzDetail){toast('Карточка ещё загружается');return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-status').textContent='Выберите качество/раздачу. Чем больше сидов, тем стабильнее старт.'; $('kinozal-torrent-dialog').hidden=false;
-    state.kzDetail.variants.forEach(function(v){var b=makeButton('', 'torrent-button', function(){playKinozalTorrent(v);});var strong=document.createElement('strong');strong.textContent=v.current?'Текущая: '+v.title:v.title;var small=document.createElement('small');small.textContent=[v.format,v.size,v.seeds?'Сиды: '+v.seeds:'',v.peers?'Пиры: '+v.peers:''].filter(Boolean).join(' · ');b.append(strong,small);list.appendChild(b);}); var first=list.querySelector('button');if(first)first.focus();
+    state.kzDetail.variants.forEach(function(v){var b=makeButton('', 'torrent-button', function(){playKinozalTorrent(v);});var strong=document.createElement('strong');strong.textContent=v.current?'Текущая: '+v.title:v.title;var small=document.createElement('small');small.textContent=['Кинозал',v.format,v.size?'Размер: '+v.size:'','Сиды: '+v.seeds,v.peers?'Пиры: '+v.peers:''].filter(Boolean).join(' · ');b.append(strong,small);list.appendChild(b);}); var first=list.querySelector('button');if(first)first.focus();
   }
   function closeKinozalTorrents(){ $('kinozal-torrent-dialog').hidden=true; $('kinozal-watch').focus(); }
   async function uploadKinozalTorrent(release, context) {
@@ -1107,12 +1107,34 @@
     } catch (error) { $('torrent-note').textContent = 'TorrServer: ' + error.message; toast(error.message); }
   }
   function playTorrentFile(hash, file) { playSource({ label: 'TorrServer · ' + file.path.split('/').pop(), url: serverMediaUrl('/play/' + encodeURIComponent(hash) + '/' + encodeURIComponent(file.id)), type: '', torrent: true }); }
-  function torrentLabel(torrent) { return [torrent.quality, torrent.voice, torrent.size ? String(torrent.size) : '', torrent.seeders ? 'S:' + torrent.seeders : ''].filter(Boolean).join(' · '); }
+  function torrentBadge(parent, label, kind) {
+    var badge = document.createElement('span');
+    badge.className = 'torrent-meta-badge' + (kind ? ' ' + kind : '');
+    badge.textContent = label; parent.appendChild(badge);
+  }
+  function renderTorrentRow(torrent) {
+    var b = makeButton('', 'torrent-button seena-torrent-card', function () { playTorrent(torrent); });
+    var title = document.createElement('strong');
+    title.className = 'torrent-release-name';
+    title.textContent = torrent.name; b.appendChild(title);
+    var info = document.createElement('small');
+    info.className = 'torrent-release-info';
+    info.textContent = [torrent.quality, torrent.voice].filter(Boolean).join(' · ');
+    if (info.textContent) b.appendChild(info);
+    var meta = document.createElement('div');
+    meta.className = 'torrent-meta-row';
+    torrentBadge(meta, 'Площадка: ' + (torrent.platform || 'не указана'), 'torrent-meta-platform');
+    torrentBadge(meta, 'Размер: ' + (torrent.size || '—'), 'torrent-meta-size');
+    torrentBadge(meta, 'Сиды: ' + (torrent.seeders === null ? '—' : torrent.seeders), 'torrent-meta-seeders');
+    if (torrent.peers !== null) torrentBadge(meta, 'Пиры: ' + torrent.peers, 'torrent-meta-peers');
+    b.appendChild(meta);
+    return b;
+  }
   async function openTorrents() {
     if (!state.detailItem) return; $('torrent-section').hidden = false; $('torrent-note').textContent = 'Загружаем торренты…'; $('torrent-section').scrollIntoView({ block: 'start' }); checkTorrServer(true);
     if (state.torrentsLoaded) { var ex = $('torrent-list').querySelector('button'); if (ex) ex.focus(); return; } clear($('torrent-list'));
     try { var response = await fetchJson(model.torrentsUrl(state.detailItem.id)); var torrents = model.torrentItems(response); state.torrentsLoaded = true;
-      torrents.forEach(function (torrent) { var b = makeButton(torrent.name, 'torrent-button', function () { playTorrent(torrent); }); var small = document.createElement('small'); small.textContent = torrentLabel(torrent); b.appendChild(small); $('torrent-list').appendChild(b); });
+      torrents.forEach(function (torrent) { $('torrent-list').appendChild(renderTorrentRow(torrent)); });
       $('torrent-note').textContent = torrents.length ? 'Выберите торрент — Seena передаст magnet/link локальному TorrServer.' : 'Для этого материала торренты не найдены.'; var first = $('torrent-list').querySelector('button'); if (first) first.focus();
     } catch (error) { $('torrent-note').textContent = 'Не удалось загрузить торренты: ' + error.message; toast('Торренты недоступны: ' + error.message); }
   }
