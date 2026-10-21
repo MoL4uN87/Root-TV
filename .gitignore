@@ -52,3 +52,19 @@ tv-video-search.json
 
 # Local diagnostic playlists
 diagnostics/*.m3u
+
+# LG VPN private credentials, active routing and logs (never publish)
+vpn/config/
+vpn/log/
+vpn/private/
+vpn/backup*/
+vpn/*.pid
+vpn/*.conf
+vpn/*.json
+**/lgvpn/config/
+**/lgvpn/log/
+**/lgvpn/backup*/
+**/vpn.json
+**/vpn.runtime.json
+**/server.conf
+**/active-route.conf
