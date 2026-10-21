@@ -461,7 +461,7 @@
           source = model.trailerSource(detail, item);
         } catch (_) { /* If movie details are unavailable, fall back to video search. */ }
       }
-      if (requestId !== state.trailerRequestId || !document.body.contains(button)) return;
+      if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
       if (source) {
         if (source.mode === 'embed') openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
         else playSource({ title: item.title, label: 'Трейлер', url: source.url, history: false,
@@ -471,14 +471,14 @@
       // Use the existing TV video provider; never choose an arbitrary search hit.
       var results = await fetchJson(KZ_HELPER + '/video/search?q=' +
         encodeURIComponent(model.trailerSearchQuery(item)));
-      if (requestId !== state.trailerRequestId || !document.body.contains(button)) return;
+      if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
       var matches = model.trailerSearchResults(results.items, item);
       if (!matches.length) throw new Error('Подходящий трейлер не найден');
       for (var i = 0; i < Math.min(matches.length, 5); i += 1) {
         var video;
         try { video = await fetchJson(KZ_HELPER + '/video/playback?url=' + encodeURIComponent(matches[i].preview)); }
         catch (_) { continue; }
-        if (requestId !== state.trailerRequestId || !document.body.contains(button)) return;
+        if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
         if (!video || video.status !== 'ready' || !video.url) continue;
         if (video.mode === 'embed') openWebPlayer(video.url, item.title + ' · Трейлер', button, true);
         else playSource({ title: item.title, label: 'Трейлер', url: video.url,
@@ -933,7 +933,7 @@
     try { var html = await kinozalGet('/details.php?id=' + encodeURIComponent(item.id), false); var d = parseKinozalDetail(html,item); state.kzDetail=d; $('kinozal-detail-title').textContent=d.title; $('kinozal-detail-meta').textContent=[d.year,d.country,d.duration].filter(Boolean).join(' · '); $('kinozal-detail-genres').textContent=d.genres; $('kinozal-detail-overview').textContent=d.overview; if(safeImage(d.poster))setImage($('kinozal-detail-poster'),d.poster); clear($('kinozal-detail-badges')); function kb(t,k){if(!t)return;var x=document.createElement('span');x.className='detail-badge '+(k||'');x.textContent=t;$('kinozal-detail-badges').appendChild(x);} if(d.kp)kb('КП '+d.kp,'rating'); if(d.imdb)kb('IMDb '+d.imdb,'imdb'); if(d.quality)kb(d.quality,''); $('kinozal-tech').textContent=[d.quality&&('Качество: '+d.quality),d.video&&('Видео: '+d.video),d.audio&&('Аудио: '+d.audio),d.language&&('Язык: '+d.language),d.size&&('Размер: '+d.size),d.duration&&('Продолжительность: '+d.duration)].filter(Boolean).join('\n'); $('kinozal-release-info').textContent=[d.director&&('Режиссёр: '+d.director),d.cast&&('В ролях: '+d.cast)].filter(Boolean).join('\n'); loadKinozalCast(d); }
     catch(e){$('kinozal-detail-overview').textContent='Не удалось загрузить карточку: '+e.message;toast(e.message);}
   }
-  function closeKinozalDetail() { $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
+  function closeKinozalDetail() { state.trailerRequestId = (state.trailerRequestId || 0) + 1; $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
   function openKinozalTorrents() {
     if(!state.kzDetail){toast('Карточка ещё загружается');return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-status').textContent='Выберите качество/раздачу. Чем больше сидов, тем стабильнее старт.'; $('kinozal-torrent-dialog').hidden=false;
     state.kzDetail.variants.forEach(function(v){var b=makeButton('', 'torrent-button', function(){playKinozalTorrent(v);});var strong=document.createElement('strong');strong.textContent=v.current?'Текущая: '+v.title:v.title;var small=document.createElement('small');small.textContent=[v.format,v.size,v.seeds?'Сиды: '+v.seeds:'',v.peers?'Пиры: '+v.peers:''].filter(Boolean).join(' · ');b.append(strong,small);list.appendChild(b);}); var first=list.querySelector('button');if(first)first.focus();
