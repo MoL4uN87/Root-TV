@@ -10,6 +10,7 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'seena-0.3.32',
 function playerFixture() {
   const elements = {};
   const handlers = {};
+  const choiceElements = [];
   const yt = { played: 0, paused: 0, at: 25, duration: 120, seeked: [], options: null, state: 1 };
   const document = {
     activeElement: null,
@@ -17,9 +18,18 @@ function playerFixture() {
     getElementById(id) {
       if (!elements[id]) {
         elements[id] = {
-          id, hidden: id === 'quality-help', value: '0',
+          id, hidden: id === 'quality-help' || id === 'language-menu', value: '0',
           style: {}, textContent: '', tagName: id === 'seek' ? 'INPUT' : 'BUTTON',
           listeners: {},
+          get firstChild() { return id === 'language-choices' ? choiceElements[0] || null : null; },
+          appendChild(child) { if (id === 'language-choices') choiceElements.push(child); },
+          removeChild(child) { if (id === 'language-choices') choiceElements.splice(choiceElements.indexOf(child), 1); },
+          querySelectorAll() { return id === 'language-choices' ? choiceElements : []; },
+          querySelector(selector) {
+            if (id !== 'language-choices') return null;
+            if (selector === '.selected') return choiceElements.find(x => x.className.includes('selected')) || null;
+            return choiceElements[0] || null;
+          },
           setAttribute() {},
           addEventListener(type, listener) { this.listeners[type] = listener; },
           focus() { document.activeElement = this; }
@@ -28,7 +38,11 @@ function playerFixture() {
       return elements[id];
     },
     addEventListener(type, listener) { handlers[type] = listener; },
-    createElement(name) { return { tagName: name }; }
+    createElement(name) { return {
+      tagName: name.toUpperCase(), className: '', textContent: '', listeners: {},
+      addEventListener(type, fn) { this.listeners[type] = fn; },
+      focus() { document.activeElement = this; }
+    }; }
   };
   const frameWindow = {
     addEventListener(type, listener) { handlers['window:' + type] = listener; }
@@ -68,7 +82,8 @@ function playerFixture() {
 }
 
 test('Seena trailer provides visible remote controls and retains native YouTube settings', () => {
-  for (const id of ['back', 'rewind', 'toggle', 'forward', 'seek', 'quality', 'quality-help']) {
+  for (const id of ['back', 'rewind', 'toggle', 'forward', 'seek', 'quality', 'quality-help',
+    'language', 'language-menu', 'language-choices', 'language-search']) {
     assert.match(html, new RegExp('id="' + id + '"'));
   }
   assert.match(html, /controls: 1/);
@@ -78,6 +93,7 @@ test('Seena trailer provides visible remote controls and retains native YouTube 
   assert.equal(f.yt.options.playerVars.origin, 'http://127.0.0.1:8787');
   assert.equal(f.document.activeElement.id, 'toggle');
   assert.equal(f.yt.played, 1);
+  assert.equal(f.elements['language-menu'].hidden, true);
 });
 
 test('LG remote seeks in both directions, toggles pause and plays again', () => {
@@ -101,6 +117,7 @@ test('quality button explains genuine YouTube menu without fake resolution toggl
   const f = playerFixture();
   f.click('quality');
   assert.equal(f.elements['quality-help'].hidden, false);
+  assert.equal(f.elements['language-menu'].hidden, true);
   assert.equal(f.document.activeElement.id, 'quality-close');
   f.key(461);
   assert.equal(f.elements['quality-help'].hidden, true);
