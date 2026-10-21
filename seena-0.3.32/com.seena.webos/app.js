@@ -297,17 +297,35 @@
   }
   function openWebPlayer(url, title, trigger, isTrailer) {
     $('web-ime-open').hidden = Boolean(isTrailer);
-    state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = title || 'Онлайн-трансляция';
+    state.youtubeTrailerActive = Boolean(isTrailer && /^trailer-youtube\.html\?id=/.test(url));
+    state.webPlayerBaseTitle = title || 'Онлайн-трансляция';
+    state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = state.webPlayerBaseTitle;
     $('web-ime-keyboard').hidden = true;
     $('web-player-frame').onload = function () { if (!$('web-player-view').hidden) $('web-player-frame').focus(); };
     $('web-player-frame').src = url; $('web-player-view').hidden = false; $('web-player-back').focus();
   }
   function closeWebPlayer() {
     if (!$('web-player-view') || $('web-player-view').hidden) return;
+    state.youtubeTrailerActive = false;
     $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank'; $('web-ime-keyboard').hidden = true; $('web-ime-open').hidden = false;
     var trigger = state.webPlayerTrigger; state.webPlayerTrigger = null;
     if (trigger && document.body.contains(trigger)) trigger.focus();
   }
+  // The YouTube IFrame API wrapper reports progress just as Android's
+  // AndroidBridge does, but via postMessage from our own local HTML page.
+  window.addEventListener('message', function (event) {
+    if (!state.youtubeTrailerActive || $('web-player-view').hidden ||
+        event.source !== $('web-player-frame').contentWindow) return;
+    var data = event.data;
+    if (!data || data.type !== 'seena-youtube-trailer') return;
+    if (data.action === 'back') closeWebPlayer();
+    else if (data.action === 'error') toast('YouTube не смог воспроизвести трейлер');
+    else if (data.action === 'progress') {
+      var current = Number(data.current) || 0, duration = Number(data.duration) || 0;
+      $('web-player-title').textContent = state.webPlayerBaseTitle +
+        (duration > 0 ? ' · ' + formatTime(current) + ' / ' + formatTime(duration) : '');
+    }
+  });
   async function imeInput(action, text) {
     try {
       var response = await fetchJson(KZ_HELPER + '/ime/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, text: text || '' }) });
@@ -447,6 +465,21 @@
     }
   }
 
+  function playTrailerSource(source, item, button) {
+    if (source.mode === 'youtube') {
+      // YouTube's own IFrame API with playVideo(), seeking and progress,
+      // matching the original Android implementation without AndroidBridge.
+      openWebPlayer('trailer-youtube.html?id=' + encodeURIComponent(source.videoId),
+        item.title + ' · Трейлер', button, true);
+    } else if (source.mode === 'embed') {
+      openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
+    } else if (source.mode === 'direct') {
+      playSource({ title: item.title, label: 'Трейлер', url: source.url, type: source.type || '',
+        history: false, trigger: button, backLabel: '← К карточке' });
+    } else {
+      throw new Error('Неизвестный формат трейлера');
+    }
+  }
   async function openCardTrailer(item, button, isKinozal) {
     if (button.disabled) return;
     var requestId = (state.trailerRequestId || 0) + 1; state.trailerRequestId = requestId;
@@ -463,9 +496,7 @@
       }
       if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
       if (source) {
-        if (source.mode === 'embed') openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
-        else playSource({ title: item.title, label: 'Трейлер', url: source.url, history: false,
-          trigger: button, backLabel: '← К карточке' });
+        playTrailerSource(source, item, button);
         return;
       }
       // Use the existing TV video provider; never choose an arbitrary search hit.
@@ -480,9 +511,13 @@
         catch (_) { continue; }
         if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
         if (!video || video.status !== 'ready' || !video.url) continue;
-        if (video.mode === 'embed') openWebPlayer(video.url, item.title + ' · Трейлер', button, true);
-        else playSource({ title: item.title, label: 'Трейлер', url: video.url,
-          type: video.type || '', history: false, trigger: button, backLabel: '← К карточке' });
+        var linked = model.trailerSource({ trailer: video.url }, item);
+        if (linked && linked.mode === 'youtube') {
+          playTrailerSource(linked, item, button);
+        } else {
+          playTrailerSource({ mode: video.mode === 'embed' ? 'embed' : 'direct',
+            url: video.url, type: video.type || '' }, item, button);
+        }
         return;
       }
       throw new Error('Найденные трейлеры недоступны для воспроизведения');
