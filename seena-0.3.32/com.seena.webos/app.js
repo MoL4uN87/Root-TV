@@ -7,7 +7,7 @@
   var state = {
     view: 'catalog', catalog: 'all_movies', catalogs: {}, items: [], offset: 0,
     hasMore: false, loading: false, detail: null, detailItem: null, detailTrigger: null, sources: [], season: null,
-    torrentsLoaded: false, personTrigger: null, playerSource: null, playerTrigger: null, osdTimer: null, historyPending: null,
+    torrentsLoaded: false, torrentRows: [], torrentSort: 'seeds', kinozalTorrentSort: 'seeds', personTrigger: null, playerSource: null, playerTrigger: null, osdTimer: null, historyPending: null,
     searchItems: [], searchQuery: '', searchSort: 'popular', searchFilters: { genre: '', country: '', years: '', rating: 0 }, searchEnriching: false,
     kzLoaded: false, kzLoadedAt: 0, kzLoading: false, kzLoggedIn: false, kzPage: 0, kzLastPage: 0, kzItems: [], kzDetail: null, kzDetailTrigger: null,
     kzSearchPage: 0, kzSearchLastPage: 0, kzSearchQuery: '', kzSearchItems: [], kzSearchTrigger: null, kzSearchLoading: false,
@@ -1025,9 +1025,30 @@
     catch(e){$('kinozal-detail-overview').textContent='Не удалось загрузить карточку: '+e.message;toast(e.message);}
   }
   function closeKinozalDetail() { state.trailerRequestId = (state.trailerRequestId || 0) + 1; $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
+  function renderKinozalTorrentVariants() {
+    var list = $('kinozal-torrent-list'); clear(list);
+    if (!state.kzDetail) return;
+    model.sortTorrentItems(state.kzDetail.variants, state.kinozalTorrentSort).forEach(function (v) {
+      var b = makeButton('', 'torrent-button', function () { playKinozalTorrent(v); });
+      var strong = document.createElement('strong');
+      strong.textContent = v.current ? 'Текущая: ' + v.title : v.title;
+      var small = document.createElement('small');
+      var voice = model.torrentVoiceLabel(v);
+      small.textContent = ['Кинозал', v.format, voice ? 'Озвучка: ' + voice : '',
+        v.size ? 'Размер: ' + v.size : '', 'Сиды: ' + v.seeds,
+        v.peers ? 'Пиры: ' + v.peers : ''].filter(Boolean).join(' · ');
+      b.append(strong, small); list.appendChild(b);
+    });
+  }
   function openKinozalTorrents() {
-    if(!state.kzDetail){toast('Карточка ещё загружается');return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-status').textContent='Выберите качество/раздачу. Чем больше сидов, тем стабильнее старт.'; $('kinozal-torrent-dialog').hidden=false;
-    state.kzDetail.variants.forEach(function(v){var b=makeButton('', 'torrent-button', function(){playKinozalTorrent(v);});var strong=document.createElement('strong');strong.textContent=v.current?'Текущая: '+v.title:v.title;var small=document.createElement('small');small.textContent=['Кинозал',v.format,v.size?'Размер: '+v.size:'','Сиды: '+v.seeds,v.peers?'Пиры: '+v.peers:''].filter(Boolean).join(' · ');b.append(strong,small);list.appendChild(b);}); var first=list.querySelector('button');if(first)first.focus();
+    if (!state.kzDetail) { toast('Карточка ещё загружается'); return; }
+    $('kinozal-torrent-status').textContent =
+      'Выберите раздачу. Сортировка по сидам, качеству или озвучке.';
+    $('kinozal-torrent-sortbar').hidden = false;
+    $('kinozal-torrent-dialog').hidden = false;
+    renderKinozalTorrentVariants();
+    var first = $('kinozal-torrent-list').querySelector('button');
+    if (first) first.focus();
   }
   function closeKinozalTorrents(){ $('kinozal-torrent-dialog').hidden=true; $('kinozal-watch').focus(); }
   async function uploadKinozalTorrent(release, context) {
@@ -1037,7 +1058,7 @@
   }
   async function playKinozalTorrent(release) {
     if(!(await checkTorrServer(true))){toast('TorrServer не запущен');return;} $('kinozal-torrent-status').textContent='Скачиваем .torrent с Кинозала и передаём TorrServer…';
-    try { var st=await uploadKinozalTorrent(release),files=(st.file_stats||[]).filter(function(f){return isVideoFile(f.path);});if(!files.length)files=st.file_stats||[];if(!files.length)throw new Error('В раздаче не найдено файлов'); if(files.length===1){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,files[0]);return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-status').textContent='Выберите файл или серию:';files.forEach(function(file){var b=makeButton(file.path,'torrent-button',function(){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,file);});var sm=document.createElement('small');sm.textContent=file.length?(file.length/1073741824).toFixed(2)+' ГБ':'';b.appendChild(sm);list.appendChild(b);});var first=list.querySelector('button');if(first)first.focus(); }
+    try { var st=await uploadKinozalTorrent(release),files=(st.file_stats||[]).filter(function(f){return isVideoFile(f.path);});if(!files.length)files=st.file_stats||[];if(!files.length)throw new Error('В раздаче не найдено файлов'); if(files.length===1){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,files[0]);return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-sortbar').hidden=true;$('kinozal-torrent-status').textContent='Выберите файл или серию:';files.forEach(function(file){var b=makeButton(file.path,'torrent-button',function(){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,file);});var sm=document.createElement('small');sm.textContent=file.length?(file.length/1073741824).toFixed(2)+' ГБ':'';b.appendChild(sm);list.appendChild(b);});var first=list.querySelector('button');if(first)first.focus(); }
     catch(e){$('kinozal-torrent-status').textContent='Ошибка: '+e.message;toast(e.message);}
   }
 
@@ -1088,7 +1109,7 @@
 
   async function openDetail(item, trigger) {
     state.trailerRequestId = (state.trailerRequestId || 0) + 1;
-    state.detailTrigger = trigger || null; state.detailItem = item; state.detail = null; state.sources = []; state.torrentsLoaded = false; $('person-view').hidden = true; $('detail-view').hidden = false; $('torrent-section').hidden = true; clear($('torrent-list'));
+    state.detailTrigger = trigger || null; state.detailItem = item; state.detail = null; state.sources = []; state.torrentsLoaded = false; state.torrentRows = []; $('person-view').hidden = true; $('detail-view').hidden = false; $('torrent-section').hidden = true; clear($('torrent-list'));
     $('detail-title').textContent = item.title; $('detail-meta').textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм'].filter(Boolean).join(' · '); $('detail-genres').textContent = ''; $('detail-overview').textContent = item.overview || 'Описание отсутствует';
     if (safeImage(item.poster)) setImage($('detail-poster'), item.poster); else $('detail-poster').removeAttribute('src'); $('detail-poster').alt = item.title; $('detail-backdrop').style.backgroundImage = safeImage(item.backdrop) ? 'url("' + item.backdrop.replace(/"/g, '%22') + '")' : '';
     clear($('detail-badges')); clear($('season-tabs')); clear($('source-list')); clear($('cast-list')); clear($('similar-grid')); $('credits-section').hidden = true; $('similar-section').hidden = true; $('source-note').textContent = 'Загружаем карточку и источники…'; updateFavoriteButton(); renderPersonalRating(); $('detail-back').focus();
@@ -1186,13 +1207,55 @@
     b.appendChild(meta);
     return b;
   }
+  function renderTorrentRows() {
+    var list = $('torrent-list'); clear(list);
+    model.sortTorrentItems(state.torrentRows, state.torrentSort)
+      .forEach(function (torrent) { list.appendChild(renderTorrentRow(torrent)); });
+  }
+  function changeTorrentSort(kind, mode) {
+    if (['seeds', 'quality', 'voice'].indexOf(mode) === -1 ||
+        ['seena', 'kinozal'].indexOf(kind) === -1) return;
+    if (kind === 'seena') {
+      state.torrentSort = mode;
+      if (state.torrentsLoaded) renderTorrentRows();
+    } else {
+      state.kinozalTorrentSort = mode;
+      if (!$('kinozal-torrent-dialog').hidden && state.kzDetail &&
+          !$('kinozal-torrent-sortbar').hidden) renderKinozalTorrentVariants();
+    }
+    Array.from(document.querySelectorAll('.torrent-sort-option')).forEach(function (button) {
+      if (button.dataset.torrentList !== kind) return;
+      var selected = button.dataset.torrentSort === mode;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    var title = mode === 'seeds' ? 'сидам ↓' : mode === 'quality' ? 'качеству ↓' : 'озвучке А–Я';
+    if (kind === 'seena') $('torrent-note').textContent =
+      'Сортировка по ' + title + '. Нажмите OK на нужной раздаче.';
+    else $('kinozal-torrent-status').textContent = 'Сортировка по ' + title + '. Выберите раздачу.';
+  }
   async function openTorrents() {
     if (!state.detailItem) return; $('torrent-section').hidden = false; $('torrent-note').textContent = 'Загружаем торренты…'; $('torrent-section').scrollIntoView({ block: 'start' }); checkTorrServer(true);
-    if (state.torrentsLoaded) { var ex = $('torrent-list').querySelector('button'); if (ex) ex.focus(); return; } clear($('torrent-list'));
-    try { var response = await fetchJson(model.torrentsUrl(state.detailItem.id)); var torrents = model.torrentItems(response); state.torrentsLoaded = true;
-      torrents.forEach(function (torrent) { $('torrent-list').appendChild(renderTorrentRow(torrent)); });
-      $('torrent-note').textContent = torrents.length ? 'Выберите торрент — Seena передаст magnet/link локальному TorrServer.' : 'Для этого материала торренты не найдены.'; var first = $('torrent-list').querySelector('button'); if (first) first.focus();
-    } catch (error) { $('torrent-note').textContent = 'Не удалось загрузить торренты: ' + error.message; toast('Торренты недоступны: ' + error.message); }
+    if (state.torrentsLoaded) {
+      renderTorrentRows(); var ex = $('torrent-list').querySelector('button');
+      if (ex) ex.focus(); return;
+    }
+    clear($('torrent-list'));
+    var detailId = state.detailItem.id;
+    try {
+      var response = await fetchJson(model.torrentsUrl(detailId));
+      if (!state.detailItem || state.detailItem.id !== detailId || $('torrent-section').hidden) return;
+      state.torrentRows = model.torrentItems(response); state.torrentsLoaded = true;
+      renderTorrentRows();
+      $('torrent-note').textContent = state.torrentRows.length ?
+        'Выберите раздачу. Сортировка по сидам, качеству или озвучке.' :
+        'Для этого материала торренты не найдены.';
+      var first = $('torrent-list').querySelector('button'); if (first) first.focus();
+    } catch (error) {
+      if (!state.detailItem || state.detailItem.id !== detailId || $('torrent-section').hidden) return;
+      $('torrent-note').textContent = 'Не удалось загрузить торренты: ' + error.message;
+      toast('Торренты недоступны: ' + error.message);
+    }
   }
   function closeTorrents() { $('torrent-section').hidden = true; $('torrents-open').focus(); }
   function openServerDialog() { var s = serverSettings(); $('server-url').value = s.url; $('server-user').value = s.user; $('server-pass').value = s.pass; $('server-dialog-status').textContent = ''; $('server-dialog').hidden = false; $('server-url').focus(); }
@@ -1394,6 +1457,11 @@
   async function openIptv() { showBase('tv'); $('tv-service-status').textContent = 'Загружаем открытый каталог IPTV…'; renderIptv(iptvBuiltins); try { var response = await fetchJson(KZ_HELPER + '/iptv/playlist?url=' + encodeURIComponent('https://iptv-org.github.io/iptv/countries/ru.m3u')); state.iptvItems = iptvBuiltins.concat(response.channels || []); renderIptv(state.iptvItems); $('tv-service-status').textContent = 'Каналов: ' + state.iptvItems.length + '. Доступность отдельных потоков зависит от вещателя.'; } catch (error) { $('tv-service-status').textContent = 'Показаны проверенные каналы: ' + error.message; } var first = $('iptv-grid').querySelector('.service-card'); if (first) first.focus(); }
   $('tv-open').addEventListener('click', openIptv);
   $('kinozal-open').addEventListener('click', async function () { showBase('kinozal'); try { await restoreSportNetwork(); } catch (_) { return; } if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 24 * 60 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-content-refresh').addEventListener('click', refreshKinozalContent); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-trailer').addEventListener('click', function () { if (state.kzDetailItem) openCardTrailer(state.kzDetailItem, this, true); }); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  Array.from(document.querySelectorAll('.torrent-sort-option')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      changeTorrentSort(button.dataset.torrentList, button.dataset.torrentSort);
+    });
+  });
   $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearSeenaCache);
   Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) { button.addEventListener('click', function () { setCacheLimit(Number(button.dataset.cacheMb), button); }); });
   ['kinozal-account-user', 'kinozal-account-pass'].forEach(function (id) {
