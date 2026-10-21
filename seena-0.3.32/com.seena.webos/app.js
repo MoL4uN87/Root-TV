@@ -1109,7 +1109,7 @@
 
   async function openDetail(item, trigger) {
     state.trailerRequestId = (state.trailerRequestId || 0) + 1;
-    state.detailTrigger = trigger || null; state.detailItem = item; state.detail = null; state.sources = []; state.torrentsLoaded = false; state.torrentRows = []; $('person-view').hidden = true; $('detail-view').hidden = false; $('torrent-section').hidden = true; clear($('torrent-list'));
+    state.sourceRequestId = (state.sourceRequestId || 0) + 1; state.detailTrigger = trigger || null; state.detailItem = item; state.detail = null; state.sources = []; state.torrentsLoaded = false; state.torrentRows = []; $('person-view').hidden = true; $('detail-view').hidden = false; $('torrent-section').hidden = true; clear($('torrent-list'));
     $('detail-title').textContent = item.title; $('detail-meta').textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм'].filter(Boolean).join(' · '); $('detail-genres').textContent = ''; $('detail-overview').textContent = item.overview || 'Описание отсутствует';
     if (safeImage(item.poster)) setImage($('detail-poster'), item.poster); else $('detail-poster').removeAttribute('src'); $('detail-poster').alt = item.title; $('detail-backdrop').style.backgroundImage = safeImage(item.backdrop) ? 'url("' + item.backdrop.replace(/"/g, '%22') + '")' : '';
     clear($('detail-badges')); clear($('season-tabs')); clear($('source-list')); clear($('cast-list')); clear($('similar-grid')); $('credits-section').hidden = true; $('similar-section').hidden = true; $('source-note').textContent = 'Загружаем карточку и источники…'; updateFavoriteButton(); renderPersonalRating(); $('detail-back').focus();
@@ -1122,13 +1122,46 @@
     } catch (error) { $('source-note').textContent = 'Не удалось загрузить карточку: ' + error.message; toast('Ошибка карточки: ' + error.message); }
   }
   function visibleSources() { if (state.season == null) return state.sources.filter(function (x) { return x.season == null; }); return state.sources.filter(function (x) { return x.season === state.season; }); }
+  async function playOnlineSource(source, button) {
+    if (!source.playbackKey) {
+      playSource(Object.assign({}, source, { trigger: button }));
+      return;
+    }
+    var url = model.veoveoStreamUrl(source.playbackKey);
+    if (!url) { toast('Veoveo: некорректный ключ воспроизведения.'); return; }
+    var item = state.detailItem, requestId = (state.sourceRequestId || 0) + 1;
+    state.sourceRequestId = requestId;
+    button.disabled = true;
+    $('source-note').textContent = 'Veoveo: получаем ссылку на видео…';
+    try {
+      // Same API origin as the rest of Seena; no arbitrary URLs from catalog data.
+      var response = await fetchJson(url);
+      if (state.sourceRequestId !== requestId || state.detailItem !== item ||
+          $('detail-view').hidden) return;
+      var media = model.veoveoResolvedMedia(response);
+      if (!media) throw new Error('сервер не вернул корректный m3u8/filepath');
+      playSource(Object.assign({}, source, media, { trigger: button }));
+      $('source-note').textContent = 'Выберите озвучку и качество, затем нажмите OK.';
+    } catch (error) {
+      if (state.sourceRequestId === requestId && state.detailItem === item &&
+          !$('detail-view').hidden) {
+        $('source-note').textContent = 'Veoveo: ' + error.message +
+          '. Выберите другой источник или «Торренты».';
+        toast('Veoveo: ' + error.message);
+      }
+    } finally {
+      button.disabled = false;
+    }
+  }
   function renderSources() {
     var list = $('source-list'); clear(list); Array.from($('season-tabs').children).forEach(function (b) { b.classList.toggle('active', Number(b.dataset.season) === state.season); }); var sources = visibleSources();
     sources.forEach(function (source) {
-      var b = makeButton(source.label, 'source-button', function () { playSource(source); });
+      var b = makeButton(source.label, 'source-button', function () { playOnlineSource(source, b); });
       var small = document.createElement('small');
       var format = source.type.indexOf('mpegurl') !== -1 ? 'HLS' : (source.type.indexOf('mp4') !== -1 ? 'MP4' : 'Видео');
-      small.textContent = ['Качество: ' + (source.quality || 'авто'), source.provider, format].filter(Boolean).join(' · ');
+      small.textContent = ['Качество: ' + (source.quality || 'авто'),
+        source.provider, source.playbackKey ? 'Ссылка по запросу' : format]
+        .filter(Boolean).join(' · ');
       b.appendChild(small); list.appendChild(b);
     });
     $('source-note').textContent = sources.length ? 'Выберите озвучку и качество, затем нажмите OK.' : 'Прямых видеопотоков нет. Проверьте «Торренты».';
