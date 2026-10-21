@@ -78,6 +78,33 @@
     return m ? m[1] + 'p' : '';
   }
 
+  // Android Veoveo playback keys are veo:<content-id>:<season>:<episode>.
+  // The upstream API host is fixed, never sourced from an untrusted movie row.
+  function veoveoStreamUrl(key) {
+    var match = /^veo:([1-9]\d{0,18}):(\d{1,5}):(\d{1,5})$/.exec(String(key || ''));
+    if (!match || Number(match[2]) > 9999 || Number(match[3]) > 9999) return '';
+    var url = BASE + 'veoveo/stream?content-id=' + encodeURIComponent(match[1]);
+    if (Number(match[2]) > 0) url += '&season=' + encodeURIComponent(match[2]);
+    if (Number(match[3]) > 0) url += '&episode=' + encodeURIComponent(match[3]);
+    return url;
+  }
+
+  function veoveoResolvedMedia(response) {
+    // Android fetchM3u8FromApi reads top-level m3u8, then filepath.
+    if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+    var m3u8 = typeof response.m3u8 === 'string' ? response.m3u8.trim() : '';
+    var filepath = typeof response.filepath === 'string' ? response.filepath.trim() : '';
+    var url = m3u8 || filepath;
+    if (!validVideoUrl(url)) return null;
+    try {
+      var parsed = new URL(url);
+      if (parsed.username || parsed.password) return null;
+    } catch (_) { return null; }
+    return { url: url, type: m3u8 ? 'application/vnd.apple.mpegurl' :
+      /\.m3u8(?:\?|$)/i.test(url) ? 'application/vnd.apple.mpegurl' :
+      /\.mp4(?:\?|$)/i.test(url) ? 'video/mp4' : '' };
+  }
+
   function directSources(detail) {
     detail = detail || {};
     // Android MovieResponse exposes independent stream catalogs. A single ||
@@ -121,10 +148,38 @@
       if (u) push(u, voiceLabel(value) === 'Озвучка' ? voice : voiceLabel(value), qualityOf(value, keyHint || fallbackQuality), prefix, seasonNumber, providerOf(value) || provider);
     }
 
-    function addVoice(voice, prefix, seasonNumber) {
+    function addVoice(voice, prefix, seasonNumber, episodeNumber, catalogId, catalogProvider) {
       if (!voice) return;
       var vlabel = voiceLabel(voice), q = qualityOf(voice, ''), provider = providerOf(voice);
       var direct = rawUrl(voice); if (direct) push(direct, vlabel, q, prefix, seasonNumber, provider);
+      // getSource() explicitly recognizes Veoveo; the dedicated Veoveo
+      // catalog also supplies provider when sourceRaw is absent.
+      var sourceRaw = String(first(voice,
+        ['sourceRaw', 'source_raw', 'source', 'provider'], '')).trim().toLowerCase();
+      var isVeoveo = sourceRaw === 'veoveo' ||
+        (!sourceRaw && catalogProvider === 'Veoveo');
+      if (isVeoveo && typeof voice === 'object') {
+        var contentId = String(first(voice, ['veoContentId', 'veo_content_id',
+          'contentId', 'content_id'], catalogId || '')).trim();
+        var sn = first(voice, ['season'], seasonNumber);
+        var ep = first(voice, ['episode'], episodeNumber);
+        sn = sn == null ? 0 : Number(sn);
+        ep = ep == null ? 0 : Number(ep);
+        if (/^[1-9]\d{0,18}$/.test(contentId) && Number.isInteger(sn) &&
+            Number.isInteger(ep) && sn >= 0 && ep >= 0 && sn <= 9999 && ep <= 9999) {
+          var playbackKey = 'veo:' + contentId + ':' + sn + ':' + ep;
+          var label = (prefix ? prefix + ' · ' : '') + vlabel;
+          var identity = playbackKey + '|' + label;
+          if (!seen[identity]) {
+            seen[identity] = true;
+            out.push({ label: label, voice: vlabel, provider: 'Veoveo',
+              quality: q || 'авто', qualityRank: qualityRank[q] || 0,
+              season: seasonNumber == null ? (sn || null) : Number(seasonNumber),
+              url: '', playbackKey: playbackKey,
+              type: 'application/vnd.apple.mpegurl' });
+          }
+        }
+      }
       ['sources', 'qualityOptions', 'quality_options', 'qualities', 'urls', 'files', 'directUrls', 'direct_urls'].forEach(function (name) {
         var variants = voice[name];
         if (Array.isArray(variants)) variants.forEach(function (v) { addVariant(v, vlabel, q, prefix, seasonNumber, provider, ''); });
@@ -137,12 +192,13 @@
       var catalog = entry.data;
       if (!catalog || typeof catalog !== 'object' || visited.indexOf(catalog) >= 0) return;
       visited.push(catalog);
-      function useVoice(voice, prefix, seasonNumber) {
+      function useVoice(voice, prefix, seasonNumber, episodeNumber) {
         // Keep explicit provider from API, otherwise use the catalog origin.
         if (voice && typeof voice === 'object' && !providerOf(voice)) {
           voice = Object.assign({}, voice, { provider: entry.provider });
         }
-        addVoice(voice, prefix, seasonNumber);
+        addVoice(voice, prefix, seasonNumber, episodeNumber,
+          first(catalog, ['contentId', 'content_id'], null), entry.provider);
       }
       if (Array.isArray(catalog)) {
         catalog.forEach(function (voice) { useVoice(voice, '', null); }); return;
@@ -159,7 +215,7 @@
           var episodeNumber = first(episode, ['episodeNumber', 'episode_number', 'number'], '?');
           var label = 'Сезон ' + (seasonNumber == null ? '?' : seasonNumber) + ' · Серия ' + episodeNumber;
           ['voices', 'apiVoices', 'api_voices'].forEach(function (key) {
-            if (Array.isArray(episode[key])) episode[key].forEach(function (voice) { useVoice(voice, label, seasonNumber); });
+            if (Array.isArray(episode[key])) episode[key].forEach(function (voice) { useVoice(voice, label, seasonNumber, episodeNumber); });
           });
         });
       });
@@ -687,6 +743,8 @@
     imageUrl: imageUrl,
     catalogItems: catalogItems,
     directSources: directSources,
+    veoveoStreamUrl: veoveoStreamUrl,
+    veoveoResolvedMedia: veoveoResolvedMedia,
     qualityDisplayLabel: qualityDisplayLabel,
     castItems: castItems,
     personInfo: personInfo,
