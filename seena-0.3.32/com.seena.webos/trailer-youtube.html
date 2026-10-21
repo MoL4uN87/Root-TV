@@ -27,6 +27,22 @@
     .action.primary{background:#1678c7;border-color:#79c5ff;font-weight:bold}
     .action:focus,#seek:focus{outline:4px solid #fff;outline-offset:3px;background-color:#215784}
     .action:active{background:#226bab}
+    /* The LG Chromium 79 engine ignores flex gap; use explicit margins. */
+    .actions .action+.action{margin-left:9px}
+    #language-menu{position:absolute;left:11%;right:11%;bottom:240px;z-index:13;
+      box-sizing:border-box;max-height:calc(100vh - 280px);overflow-y:auto;padding:20px 24px;
+      background:rgba(9,22,41,.98);border:2px solid #7ac3ff;border-radius:14px;
+      box-shadow:0 8px 32px rgba(0,0,0,.8)}
+    #language-menu[hidden]{display:none}
+    #language-menu h2{margin:0 0 9px;font-size:25px}
+    #language-menu p{margin:5px 0 15px;font-size:17px;color:#b8cde6;line-height:1.4}
+    #language-choices{display:block}
+    .language-choice{display:block;width:100%;margin:8px 0;padding:15px 18px;text-align:left;
+      background:#1c324e;color:#fff;border:2px solid #405b80;border-radius:10px;font-size:20px}
+    .language-choice.selected{border-color:#76cb99;background:#194733}
+    .language-choice:focus,#language-close:focus{outline:4px solid white;outline-offset:3px}
+    #language-close{margin-top:12px;padding:11px 30px;background:#275d91;color:#fff;
+      border:2px solid #8acaff;border-radius:9px;font-size:20px}
     #quality-help{position:absolute;left:9%;right:9%;bottom:225px;z-index:12;box-sizing:border-box;
       padding:22px 28px;background:rgba(8,23,41,.98);border:2px solid #72bfff;border-radius:14px;
       font-size:22px;line-height:1.5;text-align:center}
@@ -54,9 +70,17 @@
       <button id="rewind" class="action" type="button">⏪ −10 сек</button>
       <button id="toggle" class="action primary" type="button">▶ Играть</button>
       <button id="forward" class="action" type="button">+10 сек ⏩</button>
+      <button id="language" class="action" type="button">🌐 Язык / трейлер</button>
       <button id="quality" class="action" type="button">⚙ Качество YouTube</button>
     </div>
     <div id="hint">Пульт: ◀ / ▶ перемотка по 10 сек · OK — выбранная кнопка · ▲ / ▼ — переключение кнопок</div>
+  </div>
+
+  <div id="language-menu" hidden aria-label="Выбор языка и варианта трейлера">
+    <h2>🌐 Трейлер и язык</h2>
+    <p id="language-note">Язык указан по данным ролика, а не по проверке его озвучки.</p>
+    <div id="language-choices"></div>
+    <button id="language-close" type="button">Закрыть</button>
   </div>
 
   <div id="quality-help" hidden>
@@ -78,12 +102,32 @@
       var seek = document.getElementById('seek');
       var timeLabel = document.getElementById('times');
       var toggleButton = document.getElementById('toggle');
+      var languageMenu = document.getElementById('language-menu');
+      var languageChoices = document.getElementById('language-choices');
+      var clipOptions = [];
+      var rawClips = params.get('clips');
+      if (rawClips && rawClips.length <= 3000) {
+        try {
+          var parsedClips = JSON.parse(rawClips);
+          if (Array.isArray(parsedClips)) parsedClips.slice(0, 12).forEach(function (clip) {
+            if (!clip || !/^[A-Za-z0-9_-]{11}$/.test(String(clip.id || '')) ||
+                clipOptions.some(function (candidate) { return candidate.id === clip.id; })) return;
+            clipOptions.push({ id: clip.id,
+              lang: /^[a-z]{2}(?:-[a-z]{2})?$/i.test(String(clip.lang || ''))
+                ? String(clip.lang).toLowerCase().slice(0, 2) : '',
+              title: String(clip.title || '').slice(0, 90) });
+          });
+        } catch (_) {}
+      }
+      if (!clipOptions.some(function (clip) { return clip.id === videoId; }))
+        clipOptions.unshift({ id: videoId, lang: '', title: '' });
       var qualityHelp = document.getElementById('quality-help');
       var buttons = [
         document.getElementById('back'),
         document.getElementById('rewind'),
         toggleButton,
         document.getElementById('forward'),
+        document.getElementById('language'),
         document.getElementById('quality')
       ];
       var player = null, progressTimer = null, dragging = false;
@@ -140,6 +184,54 @@
         else index = (index + delta + buttons.length) % buttons.length;
         buttons[index].focus();
       }
+      function languageLabel(lang) {
+        var labels = { ru: '🇷🇺 Русский', en: '🇬🇧 English', uk: '🇺🇦 Українська',
+          de: '🇩🇪 Deutsch', fr: '🇫🇷 Français', es: '🇪🇸 Español', ja: '🇯🇵 日本語',
+          ko: '🇰🇷 한국어' };
+        return labels[lang] || (lang ? lang.toUpperCase() : 'Язык не указан');
+      }
+      function showLanguageMenu(show) {
+        languageMenu.hidden = !show;
+        if (!show) { document.getElementById('language').focus(); return; }
+        while (languageChoices.firstChild) languageChoices.removeChild(languageChoices.firstChild);
+        document.getElementById('language-note').textContent =
+          clipOptions.length > 1 ?
+            'Выбери ролик. Язык берётся из данных Seena, фактическая дорожка может отличаться.' :
+            'Seena предоставила только один YouTube-трейлер. Переключать язык звука через YouTube API нельзя.';
+        clipOptions.forEach(function (clip) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'language-choice' + (clip.id === videoId ? ' selected' : '');
+          button.textContent = (clip.id === videoId ? '▶ ' : '') +
+            languageLabel(clip.lang) + (clip.title ? ' · ' + clip.title : '');
+          button.addEventListener('click', function () {
+            languageMenu.hidden = true;
+            document.getElementById('language').focus();
+            if (clip.id === videoId) return;
+            videoId = clip.id;
+            playing = false;
+            lastDuration = 0;
+            updateToggle();
+            timeLabel.textContent = '00:00 / --:--';
+            tell('');
+            try {
+              if (player && player.loadVideoById) player.loadVideoById(videoId);
+              else tell('Не удалось переключить ролик YouTube.');
+            } catch (_) { tell('Не удалось переключить ролик YouTube.'); }
+          });
+          languageChoices.appendChild(button);
+        });
+        (languageChoices.querySelector('.selected') || languageChoices.firstChild ||
+          document.getElementById('language-close')).focus();
+      }
+      function focusLanguageChoice(delta) {
+        var choices = languageChoices.querySelectorAll('button');
+        if (!choices.length) return;
+        var index = Array.prototype.indexOf.call(choices, document.activeElement);
+        if (index < 0) index = 0;
+        else index = (index + delta + choices.length) % choices.length;
+        choices[index].focus();
+      }
       function showQualityHelp(show) {
         qualityHelp.hidden = !show;
         if (show) document.getElementById('quality-close').focus();
@@ -150,6 +242,8 @@
       document.getElementById('forward').addEventListener('click', function () { window.seekBy(10); });
       toggleButton.addEventListener('click', togglePlayback);
       document.getElementById('quality').addEventListener('click', function () { showQualityHelp(true); });
+      document.getElementById('language').addEventListener('click', function () { showLanguageMenu(true); });
+      document.getElementById('language-close').addEventListener('click', function () { showLanguageMenu(false); });
       document.getElementById('quality-close').addEventListener('click', function () { showQualityHelp(false); });
       seek.addEventListener('input', function () {
         dragging = true;
@@ -188,7 +282,8 @@
             videoId: videoId,
             playerVars: {
               autoplay: 1, playsinline: 1, rel: 0, controls: 1, disablekb: 0,
-              fs: 1, iv_load_policy: 3, enablejsapi: 1, origin: location.origin
+              fs: 1, iv_load_policy: 3, enablejsapi: 1, origin: location.origin,
+              hl: 'ru', cc_lang_pref: 'ru'
             },
             events: {
               onReady: function (event) {
@@ -227,17 +322,21 @@
         var code = event.keyCode;
         if (code === 461 || code === 27 || code === 8) {
           event.preventDefault();
-          if (!qualityHelp.hidden) showQualityHelp(false);
+          if (!languageMenu.hidden) showLanguageMenu(false);
+          else if (!qualityHelp.hidden) showQualityHelp(false);
           else notify('back');
         } else if (code === 412 || code === 37) {
           event.preventDefault();
-          if (qualityHelp.hidden) window.seekBy(-10);
+          if (!languageMenu.hidden) focusLanguageChoice(-1);
+          else if (qualityHelp.hidden) window.seekBy(-10);
         } else if (code === 417 || code === 39) {
           event.preventDefault();
-          if (qualityHelp.hidden) window.seekBy(10);
+          if (!languageMenu.hidden) focusLanguageChoice(1);
+          else if (qualityHelp.hidden) window.seekBy(10);
         } else if (code === 38 || code === 40) {
           event.preventDefault();
-          if (qualityHelp.hidden) focusButton(code === 38 ? -1 : 1);
+          if (!languageMenu.hidden) focusLanguageChoice(code === 38 ? -1 : 1);
+          else if (qualityHelp.hidden) focusButton(code === 38 ? -1 : 1);
         } else if (code === 415) {
           event.preventDefault();
           if (player) player.playVideo();
