@@ -7,23 +7,87 @@
   <title>Seena · Трейлер</title>
   <style>
     html,body{margin:0;padding:0;width:100%;height:100%;background:#000;color:#fff;font:20px Arial,sans-serif;overflow:hidden}
+    button,input{font-family:inherit}
     #player{position:absolute;inset:0;width:100%;height:100%}
-    #notice{position:absolute;top:35%;left:10%;width:80%;text-align:center;color:#fff;background:#000b;padding:20px;border-radius:12px;pointer-events:none}
+    #notice{position:absolute;top:35%;left:10%;width:80%;box-sizing:border-box;text-align:center;color:#fff;background:rgba(0,0,0,.85);padding:20px;border-radius:12px;pointer-events:none;z-index:5}
     #notice[hidden]{display:none}
+    /* Leave the bottom 55px free for YouTube's genuine controls and settings cog. */
+    #remote-controls{position:absolute;bottom:62px;left:3%;right:3%;z-index:10;box-sizing:border-box;
+      padding:15px 22px 16px;border-radius:16px;background:rgba(5,12,23,.91);
+      border:1px solid rgba(160,183,219,.35);box-shadow:0 5px 32px rgba(0,0,0,.65)}
+    .progress-row{display:flex;align-items:center;gap:16px}
+    #seek{display:block;flex:1;width:100%;min-width:0;height:15px;cursor:pointer;
+      -webkit-appearance:none;appearance:none;border:0;border-radius:12px;
+      background:linear-gradient(to right,#71baff 0%,#71baff 0%,#35475d 0%,#35475d 100%)}
+    #seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:25px;height:25px;border-radius:50%;background:#fff;border:4px solid #369bfa;box-sizing:border-box}
+    #times{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:19px;color:#deeaff}
+    .actions{display:flex;align-items:center;gap:12px;margin-top:13px}
+    .action{flex:1;min-width:0;white-space:nowrap;background:#1c334e;color:#fff;
+      border:2px solid #526981;border-radius:11px;padding:13px 8px;font-size:20px;cursor:pointer}
+    .action.primary{background:#1678c7;border-color:#79c5ff;font-weight:bold}
+    .action:focus,#seek:focus{outline:4px solid #fff;outline-offset:3px;background-color:#215784}
+    .action:active{background:#226bab}
+    #quality-help{position:absolute;left:9%;right:9%;bottom:225px;z-index:12;box-sizing:border-box;
+      padding:22px 28px;background:rgba(8,23,41,.98);border:2px solid #72bfff;border-radius:14px;
+      font-size:22px;line-height:1.5;text-align:center}
+    #quality-help[hidden]{display:none}
+    #quality-help button{display:inline-block;margin-top:16px;font-size:20px;padding:12px 30px;
+      color:#fff;background:#1468af;border:2px solid #aad8ff;border-radius:9px}
+    #quality-help button:focus{outline:4px solid white;outline-offset:3px}
+    #hint{font-size:15px;color:#b2c5d8;text-align:center;margin-top:9px}
+    @media(max-width:900px){#remote-controls{left:1%;right:1%;padding:10px}
+      .action{font-size:15px;padding:12px 5px}.actions{gap:5px}
+      #times{font-size:15px}#hint{font-size:12px}}
   </style>
 </head>
 <body>
   <div id="player"></div>
   <div id="notice">Подключаем трейлер YouTube…</div>
+
+  <div id="remote-controls" aria-label="Управление трейлером">
+    <div class="progress-row">
+      <input id="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Перемотка по шкале времени">
+      <span id="times">00:00 / --:--</span>
+    </div>
+    <div class="actions">
+      <button id="back" class="action" type="button">← Назад</button>
+      <button id="rewind" class="action" type="button">⏪ −10 сек</button>
+      <button id="toggle" class="action primary" type="button">▶ Играть</button>
+      <button id="forward" class="action" type="button">+10 сек ⏩</button>
+      <button id="quality" class="action" type="button">⚙ Качество YouTube</button>
+    </div>
+    <div id="hint">Пульт: ◀ / ▶ перемотка по 10 сек · OK — выбранная кнопка · ▲ / ▼ — переключение кнопок</div>
+  </div>
+
+  <div id="quality-help" hidden>
+    Качество выбирает YouTube автоматически. Для ручного выбора наведи указатель
+    Magic Remote на нижнюю панель видео и открой ⚙ YouTube → Качество
+    (если этот пункт доступен в плеере).
+    <div><button id="quality-close" type="button">Понятно</button></div>
+  </div>
+
   <script>
     (function () {
       'use strict';
-      // Keep the Android Seena scheme (YouTube IFrame Player API, autoplay,
-      // playVideo, seekBy) but use webOS-compatible UI instead of AndroidBridge.
+      // Original Android Seena uses the YouTube IFrame API. Here the HTML is served by
+      // the localhost helper so YouTube receives an HTTP origin and Referer on webOS.
+      // Never promise custom quality selection: YouTube removed setPlaybackQuality().
       var params = new URLSearchParams(location.search);
       var videoId = params.get('id') || '';
       var notice = document.getElementById('notice');
-      var player = null, progressTimer = null;
+      var seek = document.getElementById('seek');
+      var timeLabel = document.getElementById('times');
+      var toggleButton = document.getElementById('toggle');
+      var qualityHelp = document.getElementById('quality-help');
+      var buttons = [
+        document.getElementById('back'),
+        document.getElementById('rewind'),
+        toggleButton,
+        document.getElementById('forward'),
+        document.getElementById('quality')
+      ];
+      var player = null, progressTimer = null, dragging = false;
+      var playing = false, lastDuration = 0;
       function tell(message) { notice.textContent = message; notice.hidden = !message; }
       function notify(type, extra) {
         if (window.parent && window.parent !== window) {
@@ -33,6 +97,87 @@
           window.parent.postMessage(value, '*');
         }
       }
+      function fmt(sec) {
+        sec = Math.max(0, Math.floor(Number(sec) || 0));
+        var min = Math.floor(sec / 60), seconds = sec % 60;
+        var hours = Math.floor(min / 60);
+        min = min % 60;
+        return (hours ? hours + ':' + ('0' + min).slice(-2) : ('0' + min).slice(-2)) +
+          ':' + ('0' + seconds).slice(-2);
+      }
+      function updateToggle() {
+        toggleButton.textContent = playing ? '❚❚ Пауза' : '▶ Играть';
+        toggleButton.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
+      }
+      function updateProgress() {
+        if (!player || !player.getCurrentTime) return;
+        try {
+          var current = Math.max(0, player.getCurrentTime() || 0);
+          var duration = Math.max(0, player.getDuration() || 0);
+          if (duration > 0) lastDuration = duration;
+          duration = duration || lastDuration;
+          if (!dragging) {
+            var fraction = duration ? Math.min(1, current / duration) : 0;
+            seek.value = String(Math.round(fraction * 1000));
+            var pct = (fraction * 100).toFixed(2) + '%';
+            seek.style.background = 'linear-gradient(to right,#71baff 0%,#71baff ' +
+              pct + ',#35475d ' + pct + ',#35475d 100%)';
+          }
+          timeLabel.textContent = fmt(current) + ' / ' + (duration ? fmt(duration) : '--:--');
+          notify('progress', { current: current, duration: duration });
+        } catch (_) {}
+      }
+      function togglePlayback() {
+        if (!player || !player.getPlayerState) return;
+        try {
+          if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+          else player.playVideo();
+        } catch (_) {}
+      }
+      function focusButton(delta) {
+        var index = buttons.indexOf(document.activeElement);
+        if (index < 0) index = 2;
+        else index = (index + delta + buttons.length) % buttons.length;
+        buttons[index].focus();
+      }
+      function showQualityHelp(show) {
+        qualityHelp.hidden = !show;
+        if (show) document.getElementById('quality-close').focus();
+        else document.getElementById('quality').focus();
+      }
+      document.getElementById('back').addEventListener('click', function () { notify('back'); });
+      document.getElementById('rewind').addEventListener('click', function () { window.seekBy(-10); });
+      document.getElementById('forward').addEventListener('click', function () { window.seekBy(10); });
+      toggleButton.addEventListener('click', togglePlayback);
+      document.getElementById('quality').addEventListener('click', function () { showQualityHelp(true); });
+      document.getElementById('quality-close').addEventListener('click', function () { showQualityHelp(false); });
+      seek.addEventListener('input', function () {
+        dragging = true;
+        timeLabel.textContent = fmt(lastDuration * Number(seek.value) / 1000) +
+          ' / ' + (lastDuration ? fmt(lastDuration) : '--:--');
+      });
+      seek.addEventListener('change', function () {
+        dragging = false;
+        window.seekToFraction(Number(seek.value) / 1000);
+      });
+      window.seekBy = function (delta) {
+        if (!player || !player.getCurrentTime) return;
+        try {
+          var current = player.getCurrentTime() || 0;
+          var duration = player.getDuration() || 0;
+          var target = Math.max(0, current + delta);
+          player.seekTo(duration > 0 ? Math.min(target, duration) : target, true);
+          updateProgress();
+        } catch (_) {}
+      };
+      window.seekToFraction = function (fraction) {
+        if (!player || !player.getDuration) return;
+        try {
+          var duration = player.getDuration() || 0;
+          if (duration > 0) player.seekTo(duration * Math.max(0, Math.min(1, fraction)), true);
+          updateProgress();
+        } catch (_) {}
+      };
       if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
         tell('Неверный идентификатор трейлера.');
         return;
@@ -41,18 +186,26 @@
         try {
           player = new YT.Player('player', {
             videoId: videoId,
-            playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1,
-              fs: 1, iv_load_policy: 3, enablejsapi: 1, origin: location.origin },
+            playerVars: {
+              autoplay: 1, playsinline: 1, rel: 0, controls: 1, disablekb: 0,
+              fs: 1, iv_load_policy: 3, enablejsapi: 1, origin: location.origin
+            },
             events: {
               onReady: function (event) {
                 tell('');
                 event.target.playVideo();
+                toggleButton.focus();
                 notify('ready');
-                progressTimer = setInterval(function () {
-                  if (!player || !player.getCurrentTime) return;
-                  try { notify('progress', { current: player.getCurrentTime() || 0,
-                    duration: player.getDuration() || 0 }); } catch (_) {}
-                }, 500);
+                updateProgress();
+                progressTimer = setInterval(updateProgress, 500);
+              },
+              onStateChange: function (event) {
+                playing = event.data === YT.PlayerState.PLAYING;
+                updateToggle();
+                updateProgress();
+              },
+              onAutoplayBlocked: function () {
+                tell('Автозапуск заблокирован. Нажмите ▶ Играть.');
               },
               onError: function (event) {
                 var code = Number(event && event.data) || 0;
@@ -67,42 +220,49 @@
           });
         } catch (_) { tell('Не удалось открыть плеер YouTube.'); notify('error'); }
       };
-      window.seekBy = function (delta) {
-        if (!player || !player.getCurrentTime) return;
-        try {
-          var current = player.getCurrentTime() || 0, duration = player.getDuration() || 0;
-          player.seekTo(Math.max(0, Math.min(current + delta, duration > 0 ? duration : current + delta)), true);
-        } catch (_) {}
-      };
-      window.seekToFraction = function (fraction) {
-        if (!player || !player.getDuration) return;
-        try { var duration = player.getDuration() || 0;
-          if (duration > 0) player.seekTo(duration * Math.max(0, Math.min(1, fraction)), true);
-        } catch (_) {}
-      };
-      window.addEventListener('keydown', function (event) {
+      // Key presses are handled by this HTML wrapper whenever it has focus.
+      // The nested youtube.com iframe is cross-origin, so focus our buttons
+      // instead of relying on its keyboard events to bubble to the wrapper.
+      document.addEventListener('keydown', function (event) {
         var code = event.keyCode;
         if (code === 461 || code === 27 || code === 8) {
-          event.preventDefault(); notify('back');
-        } else if (code === 412 || code === 37) {
-          event.preventDefault(); window.seekBy(-10);
-        } else if (code === 417 || code === 39) {
-          event.preventDefault(); window.seekBy(10);
-        } else if (code === 415 || code === 19 || code === 13 || code === 32) {
           event.preventDefault();
-          if (!player) return;
-          try { var isPaused = player.getPlayerState() !== YT.PlayerState.PLAYING;
-            if (code === 19 || (!isPaused && code !== 415)) player.pauseVideo(); else player.playVideo();
-          } catch (_) {}
+          if (!qualityHelp.hidden) showQualityHelp(false);
+          else notify('back');
+        } else if (code === 412 || code === 37) {
+          event.preventDefault();
+          if (qualityHelp.hidden) window.seekBy(-10);
+        } else if (code === 417 || code === 39) {
+          event.preventDefault();
+          if (qualityHelp.hidden) window.seekBy(10);
+        } else if (code === 38 || code === 40) {
+          event.preventDefault();
+          if (qualityHelp.hidden) focusButton(code === 38 ? -1 : 1);
+        } else if (code === 415) {
+          event.preventDefault();
+          if (player) player.playVideo();
+        } else if (code === 19) {
+          event.preventDefault();
+          if (player) player.pauseVideo();
+        } else if (code === 10252 || code === 179 || code === 32) {
+          event.preventDefault();
+          togglePlayback();
+        } else if (code === 13 && document.activeElement !== seek &&
+                   document.activeElement.tagName !== 'BUTTON') {
+          event.preventDefault();
+          togglePlayback();
         }
-      });
+      }, true);
       window.addEventListener('unload', function () {
         clearInterval(progressTimer);
         if (player && player.destroy) { try { player.destroy(); } catch (_) {} }
       });
       var script = document.createElement('script');
       script.src = 'https://www.youtube.com/iframe_api';
-      script.onerror = function () { tell('Не удалось загрузить YouTube. Проверьте подключение к сети.'); notify('error'); };
+      script.onerror = function () {
+        tell('Не удалось загрузить YouTube. Проверьте подключение к сети.');
+        notify('error');
+      };
       document.head.appendChild(script);
     }());
   </script>
