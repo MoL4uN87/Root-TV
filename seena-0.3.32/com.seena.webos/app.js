@@ -297,7 +297,7 @@
   }
   function openWebPlayer(url, title, trigger, isTrailer) {
     $('web-ime-open').hidden = Boolean(isTrailer);
-    state.youtubeTrailerActive = Boolean(isTrailer && /^trailer-youtube\.html\?id=/.test(url));
+    state.youtubeTrailerActive = Boolean(isTrailer && url.indexOf(KZ_HELPER + '/trailer/youtube?id=') === 0);
     state.webPlayerBaseTitle = title || 'Онлайн-трансляция';
     state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = state.webPlayerBaseTitle;
     $('web-ime-keyboard').hidden = true;
@@ -319,7 +319,7 @@
     var data = event.data;
     if (!data || data.type !== 'seena-youtube-trailer') return;
     if (data.action === 'back') closeWebPlayer();
-    else if (data.action === 'error') toast('YouTube не смог воспроизвести трейлер');
+    else if (data.action === 'error') toast('YouTube: ошибка ' + (Number(data.code) || 'плеера'));
     else if (data.action === 'progress') {
       var current = Number(data.current) || 0, duration = Number(data.duration) || 0;
       $('web-player-title').textContent = state.webPlayerBaseTitle +
@@ -469,7 +469,7 @@
     if (source.mode === 'youtube') {
       // YouTube's own IFrame API with playVideo(), seeking and progress,
       // matching the original Android implementation without AndroidBridge.
-      openWebPlayer('trailer-youtube.html?id=' + encodeURIComponent(source.videoId),
+      openWebPlayer(KZ_HELPER + '/trailer/youtube?id=' + encodeURIComponent(source.videoId),
         item.title + ' · Трейлер', button, true);
     } else if (source.mode === 'embed') {
       openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
