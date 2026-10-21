@@ -341,8 +341,12 @@
   // Only known video formats/YouTube hosts are accepted; do not embed arbitrary page URLs.
   function trailerMedia(value) {
     if (value && typeof value === 'object') {
-      if (String(value.site || '').toLowerCase() === 'youtube' && /^[A-Za-z0-9_-]{11}$/.test(String(value.key || '')))
-        return { mode: 'embed', url: 'https://www.youtube.com/embed/' + value.key + '?autoplay=1' };
+      // Android Seena accepts a nonempty Trailer.key if Trailer.site is empty,
+      // or its normalized name contains "youtube"/"youtu".
+      var site = String(value.site || '').trim().toLowerCase();
+      var key = String(value.key || '').trim();
+      if ((!site || site.indexOf('youtu') !== -1) && /^[A-Za-z0-9_-]{11}$/.test(key))
+        return { mode: 'youtube', videoId: key };
       return trailerMedia(value.url || value.link || value.src || '');
     }
     if (typeof value !== 'string') return null;
@@ -356,7 +360,7 @@
         else if (/^\/(?:embed|shorts)\//.test(url.pathname)) id = url.pathname.split('/')[2] || '';
       }
       if (id && /^[A-Za-z0-9_-]{11}$/.test(id))
-        return { mode: 'embed', url: 'https://www.youtube.com/embed/' + id + '?autoplay=1' };
+        return { mode: 'youtube', videoId: id };
       if (/\.(?:mp4|m3u8)$/i.test(url.pathname))
         return { mode: 'direct', url: url.href };
     } catch (_) {}
