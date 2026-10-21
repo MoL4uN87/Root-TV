@@ -41,8 +41,10 @@
       background:#1c324e;color:#fff;border:2px solid #405b80;border-radius:10px;font-size:20px}
     .language-choice.selected{border-color:#76cb99;background:#194733}
     .language-choice:focus,#language-close:focus{outline:4px solid white;outline-offset:3px}
-    #language-close{margin-top:12px;padding:11px 30px;background:#275d91;color:#fff;
+    #language-close,#language-search{margin-top:12px;padding:11px 20px;background:#275d91;color:#fff;
       border:2px solid #8acaff;border-radius:9px;font-size:20px}
+    #language-search{margin-right:12px;background:#155342;border-color:#7fe2af}
+    #language-search:focus{outline:4px solid white;outline-offset:3px}
     #quality-help{position:absolute;left:9%;right:9%;bottom:225px;z-index:12;box-sizing:border-box;
       padding:22px 28px;background:rgba(8,23,41,.98);border:2px solid #72bfff;border-radius:14px;
       font-size:22px;line-height:1.5;text-align:center}
@@ -80,6 +82,7 @@
     <h2>🌐 Трейлер и язык</h2>
     <p id="language-note">Язык указан по данным ролика, а не по проверке его озвучки.</p>
     <div id="language-choices"></div>
+    <button id="language-search" type="button">🔎 Найти русский трейлер</button>
     <button id="language-close" type="button">Закрыть</button>
   </div>
 
@@ -244,6 +247,32 @@
       document.getElementById('quality').addEventListener('click', function () { showQualityHelp(true); });
       document.getElementById('language').addEventListener('click', function () { showLanguageMenu(true); });
       document.getElementById('language-close').addEventListener('click', function () { showLanguageMenu(false); });
+      document.getElementById('language-search').addEventListener('click', function () {
+        showLanguageMenu(false);
+        notify('search-russian');
+      });
+      window.addEventListener('message', function (event) {
+        if (event.source !== window.parent) return;
+        var data = event.data;
+        if (!data || data.type !== 'seena-youtube-trailer-control' ||
+            data.action !== 'add-clip' || !data.clip ||
+            !/^[A-Za-z0-9_-]{11}$/.test(String(data.clip.id || ''))) return;
+        var clip = { id: String(data.clip.id), lang: 'ru',
+          title: String(data.clip.title || '').slice(0, 90) };
+        if (!clipOptions.some(function (entry) { return entry.id === clip.id; }))
+          clipOptions.unshift(clip);
+        languageMenu.hidden = true;
+        videoId = clip.id;
+        lastDuration = 0;
+        playing = false;
+        updateToggle();
+        tell('');
+        timeLabel.textContent = '00:00 / --:--';
+        try {
+          if (player && player.loadVideoById) player.loadVideoById(videoId);
+          else tell('Не удалось переключить YouTube-трейлер.');
+        } catch (_) { tell('Не удалось переключить YouTube-трейлер.'); }
+      });
       document.getElementById('quality-close').addEventListener('click', function () { showQualityHelp(false); });
       seek.addEventListener('input', function () {
         dragging = true;
