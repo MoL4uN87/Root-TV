@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>Seena · Трейлер</title>
+  <style>
+    html,body{margin:0;padding:0;width:100%;height:100%;background:#000;color:#fff;font:20px Arial,sans-serif;overflow:hidden}
+    #player{position:absolute;inset:0;width:100%;height:100%}
+    #notice{position:absolute;top:35%;left:10%;width:80%;text-align:center;color:#fff;background:#000b;padding:20px;border-radius:12px;pointer-events:none}
+    #notice[hidden]{display:none}
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <div id="notice">Подключаем трейлер YouTube…</div>
+  <script>
+    (function () {
+      'use strict';
+      // Keep the Android Seena scheme (YouTube IFrame Player API, autoplay,
+      // playVideo, seekBy) but use webOS-compatible UI instead of AndroidBridge.
+      var params = new URLSearchParams(location.search);
+      var videoId = params.get('id') || '';
+      var notice = document.getElementById('notice');
+      var player = null, progressTimer = null;
+      function tell(message) { notice.textContent = message; notice.hidden = !message; }
+      function notify(type, extra) {
+        if (window.parent && window.parent !== window) {
+          var value = extra || {};
+          value.type = 'seena-youtube-trailer';
+          value.action = type;
+          window.parent.postMessage(value, '*');
+        }
+      }
+      if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+        tell('Неверный идентификатор трейлера.');
+        return;
+      }
+      window.onYouTubeIframeAPIReady = function () {
+        try {
+          player = new YT.Player('player', {
+            videoId: videoId,
+            playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1,
+              fs: 1, iv_load_policy: 3, enablejsapi: 1 },
+            events: {
+              onReady: function (event) {
+                tell('');
+                event.target.playVideo();
+                notify('ready');
+                progressTimer = setInterval(function () {
+                  if (!player || !player.getCurrentTime) return;
+                  try { notify('progress', { current: player.getCurrentTime() || 0,
+                    duration: player.getDuration() || 0 }); } catch (_) {}
+                }, 500);
+              },
+              onError: function () {
+                tell('YouTube не разрешил воспроизвести этот трейлер. Нажмите «Назад».');
+                notify('error');
+              }
+            }
+          });
+        } catch (_) { tell('Не удалось открыть плеер YouTube.'); notify('error'); }
+      };
+      window.seekBy = function (delta) {
+        if (!player || !player.getCurrentTime) return;
+        try {
+          var current = player.getCurrentTime() || 0, duration = player.getDuration() || 0;
+          player.seekTo(Math.max(0, Math.min(current + delta, duration > 0 ? duration : current + delta)), true);
+        } catch (_) {}
+      };
+      window.seekToFraction = function (fraction) {
+        if (!player || !player.getDuration) return;
+        try { var duration = player.getDuration() || 0;
+          if (duration > 0) player.seekTo(duration * Math.max(0, Math.min(1, fraction)), true);
+        } catch (_) {}
+      };
+      window.addEventListener('keydown', function (event) {
+        var code = event.keyCode;
+        if (code === 461 || code === 27 || code === 8) {
+          event.preventDefault(); notify('back');
+        } else if (code === 412 || code === 37) {
+          event.preventDefault(); window.seekBy(-10);
+        } else if (code === 417 || code === 39) {
+          event.preventDefault(); window.seekBy(10);
+        } else if (code === 415 || code === 19 || code === 13 || code === 32) {
+          event.preventDefault();
+          if (!player) return;
+          try { var isPaused = player.getPlayerState() !== YT.PlayerState.PLAYING;
+            if (code === 19 || (!isPaused && code !== 415)) player.pauseVideo(); else player.playVideo();
+          } catch (_) {}
+        }
+      });
+      window.addEventListener('unload', function () {
+        clearInterval(progressTimer);
+        if (player && player.destroy) { try { player.destroy(); } catch (_) {} }
+      });
+      var script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = function () { tell('Не удалось загрузить YouTube. Проверьте подключение к сети.'); notify('error'); };
+      document.head.appendChild(script);
+    }());
+  </script>
+</body>
+</html>
