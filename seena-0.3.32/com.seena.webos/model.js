@@ -325,6 +325,72 @@
     });
   }
 
+  // Client-side ordering of loaded Seena and Kinozal torrent releases.
+  // No additional backend calls, and the original arrays are never mutated.
+  function torrentVoiceLabel(item) {
+    var voice = item && (item.voice || item.voice_label || item.voiceLabel ||
+      item.audio || item.audioLabel || '');
+    if (Array.isArray(voice)) voice = voice.map(function (x) {
+      return typeof x === 'string' ? x : first(x, ['name', 'label', 'title'], '');
+    }).filter(Boolean).join(', ');
+    if (voice && typeof voice === 'object') voice = first(voice, ['name', 'label', 'title'], '');
+    if (String(voice || '').trim()) return String(voice).trim();
+    // Kinozal does not give a separate voice field for related releases.
+    // Only recognize explicit language/voice markers in the release title.
+    var title = String(item && (item.title || item.name) || '');
+    var match = title.match(/(?:дублированн(?:ый|ая|ое|ые)?|дубляж|многоголос(?:ый|ая|ое)?|двухголос(?:ый|ая|ое)?|одноголос(?:ый|ая|ое)?|профессиональн(?:ый|ая|ое)?|любительск(?:ий|ая|ое)?|авторск(?:ий|ая|ое)?|оригинал(?:ьн(?:ый|ая|ое))?|субтитры|лицензи(?:я|онн(?:ый|ая|ое)?))/i);
+    return match ? match[0] : '';
+  }
+
+  function torrentQualityRank(item) {
+    var quality = [item && item.quality, item && item.format, item && item.name, item && item.title]
+      .filter(Boolean).join(' ').toLowerCase();
+    var pixels = 0;
+    if (/\b(?:2160p?|4k|uhd)\b/i.test(quality)) pixels = 2160;
+    else if (/\b(?:1440p?|2k)\b/i.test(quality)) pixels = 1440;
+    else if (/\b1080[pi]?\b|full[\s-]?hd/i.test(quality)) pixels = 1080;
+    else if (/\b720[pi]?\b|\bhd\b/i.test(quality)) pixels = 720;
+    else if (/\b576[pi]?\b/i.test(quality)) pixels = 576;
+    else if (/\b480[pi]?\b|\bsdrip\b/i.test(quality)) pixels = 480;
+    else if (/\b360[pi]?\b/i.test(quality)) pixels = 360;
+    else if (/\bdvd(?:rip)?\b/i.test(quality)) pixels = 480;
+    // Similar resolution: Remux > BluRay > WEB-DL > WEBRip > HDTV.
+    var release = /remux/i.test(quality) ? 50
+      : /blu[\s-]?ray|bdrip|brrip/i.test(quality) ? 40
+      : /web[\s.-]?dl/i.test(quality) ? 30
+      : /webrip/i.test(quality) ? 20
+      : /hdtv/i.test(quality) ? 10 : 0;
+    return pixels * 100 + release;
+  }
+
+  function sortTorrentItems(items, mode) {
+    var rows = Array.isArray(items) ? items : [];
+    mode = /^(seeds|quality|voice)$/.test(String(mode)) ? mode : 'seeds';
+    function seeds(item) {
+      var raw = item && (item.seeders == null ? item.seeds : item.seeders);
+      return torrentCount(raw);
+    }
+    return rows.map(function (item, index) { return { item: item, index: index }; })
+      .sort(function (a, b) {
+        var x = a.item || {}, y = b.item || {};
+        if (mode === 'voice') {
+          var vx = torrentVoiceLabel(x), vy = torrentVoiceLabel(y);
+          if (!vx && vy) return 1;
+          if (vx && !vy) return -1;
+          var vc = vx.localeCompare(vy, 'ru', { sensitivity: 'base' });
+          if (vc) return vc;
+        } else if (mode === 'quality') {
+          var qc = torrentQualityRank(y) - torrentQualityRank(x);
+          if (qc) return qc;
+        }
+        var sx = seeds(x), sy = seeds(y);
+        if (sx === null && sy !== null) return 1;
+        if (sy === null && sx !== null) return -1;
+        if (sx !== null && sy !== null && sx !== sy) return sy - sx;
+        return a.index - b.index;
+      }).map(function (entry) { return entry.item; });
+  }
+
   function searchUrl(query) { return BASE + 'search?query=' + encodeURIComponent(query.trim()); }
   function catalogUrl(name, offset) { return BASE + 'catalog/' + encodeURIComponent(name) + '?offset=' + (offset || 0); }
   function catalogMetadataUrl() { return BASE + 'catalog/metadata'; }
@@ -630,6 +696,9 @@
     torrentItems: torrentItems,
     torrentPlatform: torrentPlatform,
     torrentSizeLabel: torrentSizeLabel,
+    torrentVoiceLabel: torrentVoiceLabel,
+    torrentQualityRank: torrentQualityRank,
+    sortTorrentItems: sortTorrentItems,
     searchUrl: searchUrl,
     catalogUrl: catalogUrl,
     catalogMetadataUrl: catalogMetadataUrl,
