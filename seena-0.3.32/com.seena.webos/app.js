@@ -465,12 +465,20 @@
     }
   }
 
-  function playTrailerSource(source, item, button) {
+  function playTrailerSource(source, item, button, candidates) {
     if (source.mode === 'youtube') {
       // YouTube's own IFrame API with playVideo(), seeking and progress,
       // matching the original Android implementation without AndroidBridge.
-      openWebPlayer(KZ_HELPER + '/trailer/youtube?id=' + encodeURIComponent(source.videoId),
-        item.title + ' · Трейлер', button, true);
+      var url = KZ_HELPER + '/trailer/youtube?id=' + encodeURIComponent(source.videoId);
+      if (Array.isArray(candidates) && candidates.length > 1) {
+        var options = candidates.filter(function (clip) { return clip && clip.mode === 'youtube' &&
+          /^[A-Za-z0-9_-]{11}$/.test(String(clip.videoId || '')); }).slice(0, 12)
+          .map(function (clip) { return { id: clip.videoId, lang: clip.lang || '',
+            title: String(clip.name || '').slice(0, 90) }; });
+        if (options.length > 1) url += '&clips=' + encodeURIComponent(JSON.stringify(options));
+      }
+      state.trailerFilm = item;
+      openWebPlayer(url, item.title + ' · Трейлер', button, true);
     } else if (source.mode === 'embed') {
       openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
     } else if (source.mode === 'direct') {
@@ -486,17 +494,21 @@
     button.disabled = true; button.textContent = '…';
     toast('Ищем трейлер: ' + item.title);
     try {
-      var source = model.trailerSource(null, item);
-      if (!source && !isKinozal) {
+      var candidates = model.trailerCandidates(null, item);
+      var source = candidates[0] || model.trailerSource(null, item);
+      // Fetch details even if the catalog card has a trailer: a Russian alternate
+      // may be present alongside the original English teaser in videos.results.
+      if (!isKinozal) {
         try {
           var detail = state.detailItem && state.detailItem.id === item.id && state.detail
             ? state.detail : await fetchJson(model.detailUrl(item.id));
-          source = model.trailerSource(detail, item);
-        } catch (_) { /* If movie details are unavailable, fall back to video search. */ }
+          candidates = model.trailerCandidates(detail, item);
+          source = candidates[0] || model.trailerSource(detail, item) || source;
+        } catch (_) { /* Offline detail: fall back to card trailer or video search. */ }
       }
       if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
       if (source) {
-        playTrailerSource(source, item, button);
+        playTrailerSource(source, item, button, candidates);
         return;
       }
       // Use the existing TV video provider; never choose an arbitrary search hit.
