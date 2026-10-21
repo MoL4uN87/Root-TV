@@ -182,3 +182,14 @@
 .torrent-meta-peers{background:#493329;border-color:#8e6250;color:#ffd8bb}
 .seena-torrent-card:focus .torrent-meta-badge{border-color:#c7d8ff}
 @media(max-width:1350px){.seena-torrent-card{min-height:125px}}
+
+/* TV remote friendly, client-side torrent sorting for Seena and Kinozal. */
+.torrent-sort-row{display:flex;align-items:center;flex-wrap:wrap;margin:15px 0 21px}
+.torrent-sort-row>span{font-size:19px;color:#c4d2ee;margin-right:15px}
+.torrent-sort-option{padding:13px 18px;min-height:54px;margin:0 12px 10px 0;
+  background:#1a2c4b;color:#dce8ff;border:2px solid #506991;border-radius:10px;
+  font-size:19px;font-weight:600}
+.torrent-sort-option.active{background:#4c70cc;color:white;border-color:#a2caff}
+.torrent-sort-option:focus{outline:4px solid #fff;outline-offset:3px}
+#kinozal-torrent-dialog .torrent-sort-option{font-size:17px;min-height:48px;padding:11px 13px}
+@media(max-width:850px){.torrent-sort-option{font-size:16px;padding:10px 12px}}
