@@ -178,6 +178,12 @@
             <span id="torrserver-status" class="server-status">TorrServer: проверка…</span>
             <button id="torrserver-settings" class="text-button focusable" type="button">Настройки</button>
           </div>
+          <div class="torrent-sort-row" role="group" aria-label="Сортировка торрентов Seena">
+            <span>Сортировать:</span>
+            <button type="button" class="torrent-sort-option focusable active" data-torrent-list="seena" data-torrent-sort="seeds" aria-pressed="true">↓ Сиды</button>
+            <button type="button" class="torrent-sort-option focusable" data-torrent-list="seena" data-torrent-sort="quality" aria-pressed="false">★ Качество</button>
+            <button type="button" class="torrent-sort-option focusable" data-torrent-list="seena" data-torrent-sort="voice" aria-pressed="false">♫ Озвучка</button>
+          </div>
           <div id="torrent-list" class="torrent-list"></div>
           <p id="torrent-note" class="muted"></p>
         </section>
@@ -350,6 +356,12 @@
       <div class="dialog-card kinozal-torrent-card">
         <h2>Выберите торрент</h2>
         <p id="kinozal-torrent-status" class="muted"></p>
+        <div id="kinozal-torrent-sortbar" class="torrent-sort-row" role="group" aria-label="Сортировка торрентов Кинозал">
+          <span>Сортировать:</span>
+          <button type="button" class="torrent-sort-option focusable active" data-torrent-list="kinozal" data-torrent-sort="seeds" aria-pressed="true">↓ Сиды</button>
+          <button type="button" class="torrent-sort-option focusable" data-torrent-list="kinozal" data-torrent-sort="quality" aria-pressed="false">★ Качество</button>
+          <button type="button" class="torrent-sort-option focusable" data-torrent-list="kinozal" data-torrent-sort="voice" aria-pressed="false">♫ Озвучка</button>
+        </div>
         <div id="kinozal-torrent-list" class="torrent-list kinozal-torrent-list"></div>
         <div class="dialog-actions"><button id="kinozal-torrent-cancel" class="text-button focusable" type="button">Отмена</button></div>
       </div>
