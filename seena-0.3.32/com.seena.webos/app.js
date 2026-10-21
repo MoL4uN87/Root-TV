@@ -307,6 +307,7 @@
   function closeWebPlayer() {
     if (!$('web-player-view') || $('web-player-view').hidden) return;
     state.youtubeTrailerActive = false;
+    state.trailerFilm = null;
     $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank'; $('web-ime-keyboard').hidden = true; $('web-ime-open').hidden = false;
     var trigger = state.webPlayerTrigger; state.webPlayerTrigger = null;
     if (trigger && document.body.contains(trigger)) trigger.focus();
@@ -319,6 +320,7 @@
     var data = event.data;
     if (!data || data.type !== 'seena-youtube-trailer') return;
     if (data.action === 'back') closeWebPlayer();
+    else if (data.action === 'search-russian') searchRussianTrailer();
     else if (data.action === 'error') toast('YouTube: ошибка ' + (Number(data.code) || 'плеера'));
     else if (data.action === 'progress') {
       var current = Number(data.current) || 0, duration = Number(data.duration) || 0;
@@ -488,6 +490,48 @@
       throw new Error('Неизвестный формат трейлера');
     }
   }
+  async function searchRussianTrailer() {
+    // Optional, on-demand lookup: do not delay an already working English trailer.
+    // Reuse the existing YouTube-capable Yandex video resolver; never invent a video ID.
+    if (!state.youtubeTrailerActive || !state.trailerFilm || state.trailerRussianSearching) return;
+    var item = state.trailerFilm, frame = $('web-player-frame'),
+      currentFrame = frame.src;
+    state.trailerRussianSearching = true;
+    toast('Ищем YouTube-трейлер на русском: ' + item.title);
+    try {
+      var query = model.trailerSearchQuery(item) + ' на русском';
+      var results = await fetchJson(KZ_HELPER + '/video/search?q=' + encodeURIComponent(query));
+      var matches = model.trailerSearchResults(results && results.items, item)
+        .filter(function (video) {
+          return /русск|дубл|russian|на русском/i.test(String(video.title || ''));
+        });
+      for (var i = 0; i < Math.min(matches.length, 8); i += 1) {
+        if (!state.youtubeTrailerActive || frame.src !== currentFrame) return;
+        var candidate;
+        try {
+          candidate = await fetchJson(KZ_HELPER + '/video/playback?url=' +
+            encodeURIComponent(matches[i].preview));
+        } catch (_) { continue; }
+        if (!state.youtubeTrailerActive || frame.src !== currentFrame) return;
+        if (!candidate || candidate.status !== 'ready') continue;
+        var link = model.trailerSource({ trailer: candidate.url }, item);
+        if (!link || link.mode !== 'youtube') continue;
+        frame.contentWindow.postMessage({
+          type: 'seena-youtube-trailer-control', action: 'add-clip',
+          clip: { id: link.videoId, lang: 'ru', title: matches[i].title }
+        }, '*');
+        toast('Русский трейлер найден: переключаем ролик');
+        return;
+      }
+      toast('Русский YouTube-трейлер не найден. Текущий ролик сохранён.');
+    } catch (error) {
+      if (state.youtubeTrailerActive && frame.src === currentFrame)
+        toast('Поиск русского трейлера: ' + error.message);
+    } finally {
+      state.trailerRussianSearching = false;
+    }
+  }
+
   async function openCardTrailer(item, button, isKinozal) {
     if (button.disabled) return;
     var requestId = (state.trailerRequestId || 0) + 1; state.trailerRequestId = requestId;
