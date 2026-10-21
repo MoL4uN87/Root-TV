@@ -8,8 +8,8 @@ test('official YouTube trailer is extracted from movie details, not unrelated vi
     { type: 'Trailer', site: 'YouTube', key: 'Abc123XYZ_0', official: true }
   ] } };
   assert.deepEqual(model.trailerSource(detail, {}), {
-    mode: 'embed',
-    url: 'https://www.youtube.com/embed/Abc123XYZ_0?autoplay=1'
+    mode: 'youtube',
+    videoId: 'Abc123XYZ_0'
   });
 });
 
@@ -22,7 +22,7 @@ test('direct trailer can come from the movie row; only safe media URLs pass', ()
   assert.equal(model.trailerSource({ trailer_url: 'https://youtube.com.evil.org/watch?v=Abc123XYZ_0' }), null);
   assert.equal(model.trailerSource({ trailer_url: 'javascript:alert(1)' }), null);
   assert.deepEqual(model.trailerSource({ trailer: 'https://youtu.be/Abc123XYZ_0' }), {
-    mode: 'embed', url: 'https://www.youtube.com/embed/Abc123XYZ_0?autoplay=1'
+    mode: 'youtube', videoId: 'Abc123XYZ_0'
   });
 });
 
@@ -57,4 +57,26 @@ test('ambiguous short film titles require a matching release year', () => {
   assert.deepEqual(model.trailerSearchResults(hits, film).map(x => x.preview), [
     'https://yandex.ru/video/preview/2'
   ]);
+});
+
+test('original Seena trailer schema supports YouTube site and key', () => {
+  const cases = [
+    { site: 'YouTube', key: 'Abc123XYZ_0', name: 'Official Trailer', lang: 'en', official: true, type: 'Trailer' },
+    { site: 'YouTube.com', key: 'Abc123XYZ_0' },
+    { site: '', key: 'Abc123XYZ_0' }
+  ];
+  cases.forEach(trailer => {
+    assert.deepEqual(model.trailerSource({ trailer }), {
+      mode: 'youtube', videoId: 'Abc123XYZ_0'
+    });
+  });
+  assert.equal(model.trailerSource({ trailer: { site: 'Vimeo', key: 'Abc123XYZ_0' } }), null);
+  assert.equal(model.trailerSource({ trailer: { site: 'YouTube', key: '../evil' } }), null);
+});
+
+test('YouTube URL from API is converted to a video ID for the local IFrame API player', () => {
+  assert.deepEqual(
+    model.trailerSource({ trailer: { url: 'https://www.youtube.com/watch?v=Abc123XYZ_0' } }),
+    { mode: 'youtube', videoId: 'Abc123XYZ_0' }
+  );
 });
