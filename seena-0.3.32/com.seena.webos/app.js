@@ -1178,7 +1178,7 @@
       if ((key === 37 || key === 39) && document.activeElement === $('player-progress')) { event.preventDefault(); seekBy(key === 37 ? -10 : 10); return; }
       if ((key === 37 || key === 39) && (document.activeElement === video || document.activeElement === document.body || !$('player-osd').classList.contains('visible'))) { event.preventDefault(); seekBy(key === 37 ? -10 : 10); return; }
       if (key === 13 && document.activeElement.tagName === 'BUTTON') { event.preventDefault(); document.activeElement.click(); return; }
-      if (key === 13 || key === 32) { event.preventDefault(); toggleOsd(); return; }
+      if (key === 13 || key === 32) { event.preventDefault(); if (video.paused) video.play(); else video.pause(); return; }
       var pd = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (pd[key]) { event.preventDefault(); moveFocus(pd[key]); return; }
     }
     if (document.activeElement.tagName === 'INPUT') return;
