@@ -21,6 +21,9 @@ var cookieFile = process.env.SEENA_COOKIE_FILE || path.join(root, 'cookies.json'
 var accountFile = process.env.SEENA_ACCOUNT_FILE || path.join(root, 'account.json');
 var libPath = process.env.SEENA_LIB_PATH || path.join(root, 'armhf-runtime') + ':' + root;
 var port = Number(process.env.SEENA_HELPER_PORT || 8787);
+// Serve the packaged YouTube player via loopback HTTP, not file://; YouTube embeds need an HTTP Referer.
+var trailerPlayerFile = process.env.SEENA_TRAILER_PLAYER_FILE ||
+  '/media/developer/apps/usr/palm/applications/com.seena.webos/trailer-youtube.html';
 var ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 YaBrowser/26.8.0.0 Safari/537.36';
 var hosts = ['https://kinozal.guru', 'https://kinozal.jumpingcrab.com'];
 var activeHost = hosts[1];
@@ -935,6 +938,25 @@ http.createServer(function (req, res) {
     return;
   }
   if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' });
+  if (request.pathname === '/trailer/youtube') {
+    var trailerId = request.searchParams.get('id') || '';
+    if (!/^[A-Za-z0-9_-]{11}$/.test(trailerId))
+      return json(res, 400, { error: 'invalid_trailer_id' });
+    try {
+      var playerPage = fs.readFileSync(trailerPlayerFile);
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': playerPage.length,
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store'
+      });
+      return res.end(playerPage);
+    } catch (error) {
+      console.warn('Seena trailer page unavailable: ' + (error.code || error.message));
+      return json(res, 503, { error: 'trailer_player_unavailable' });
+    }
+  }
   if (request.pathname === '/health') return json(res, 200, { status: 'ok' });
   if (request.pathname === '/cache/status') {
     try { return json(res, 200, cache.status()); }

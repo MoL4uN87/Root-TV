@@ -7,7 +7,7 @@
   var state = {
     view: 'catalog', catalog: 'all_movies', catalogs: {}, items: [], offset: 0,
     hasMore: false, loading: false, detail: null, detailItem: null, detailTrigger: null, sources: [], season: null,
-    torrentsLoaded: false, personTrigger: null, playerSource: null, playerTrigger: null, osdTimer: null, historyPending: null,
+    torrentsLoaded: false, torrentRows: [], torrentSort: 'seeds', kinozalTorrentSort: 'seeds', personTrigger: null, playerSource: null, playerTrigger: null, osdTimer: null, historyPending: null,
     searchItems: [], searchQuery: '', searchSort: 'popular', searchFilters: { genre: '', country: '', years: '', rating: 0 }, searchEnriching: false,
     kzLoaded: false, kzLoadedAt: 0, kzLoading: false, kzLoggedIn: false, kzPage: 0, kzLastPage: 0, kzItems: [], kzDetail: null, kzDetailTrigger: null,
     kzSearchPage: 0, kzSearchLastPage: 0, kzSearchQuery: '', kzSearchItems: [], kzSearchTrigger: null, kzSearchLoading: false,
@@ -31,6 +31,7 @@
     };
   }
   function showBase(view) {
+    state.trailerRequestId = (state.trailerRequestId || 0) + 1;
     var leavingSport = state.view === 'sport' && view !== 'sport';
     state.view = view;
     $('catalog-view').hidden = view !== 'catalog'; $('search-view').hidden = view !== 'search'; $('kinozal-view').hidden = view !== 'kinozal'; $('history-view').hidden = view !== 'history';
@@ -84,6 +85,15 @@
       }));
     });
   }
+  function posterTile(item, card, isKinozal) {
+    // Do not nest two buttons: the poster opens details, the overlay plays its trailer.
+    var tile = document.createElement('div'); tile.className = 'poster-tile';
+    var play = makeButton('▶', 'poster-trailer', function () { openCardTrailer(item, play, isKinozal); });
+    play.title = 'Трейлер: ' + item.title;
+    play.setAttribute('aria-label', 'Смотреть трейлер: ' + item.title);
+    tile.append(card, play);
+    return tile;
+  }
   function renderCard(item, role) {
     var b = document.createElement('button'); b.type = 'button'; b.className = 'poster-card focusable';
     var img = document.createElement('img'); img.alt = ''; img.loading = 'lazy'; if (safeImage(item.poster)) setImage(img, item.poster);
@@ -94,7 +104,7 @@
     meta.textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм', rating, personalRating ? 'Моя оценка ' + personalRating + '/10' : ''].filter(Boolean).join(' · ');
     copy.append(title, meta);
     if (role) { var rr = document.createElement('span'); rr.className = 'poster-role'; rr.textContent = role; copy.appendChild(rr); }
-    b.append(img, copy); b.addEventListener('click', function () { openDetail(item, b); }); return b;
+    b.append(img, copy); b.addEventListener('click', function () { openDetail(item, b); }); return posterTile(item, b, false);
   }
   function renderHero(item) {
     var hero = $('hero'); clear(hero); hero.style.backgroundImage = safeImage(item && item.backdrop) ? 'url("' + item.backdrop.replace(/"/g, '%22') + '")' : '';
@@ -285,18 +295,39 @@
     });
     return state.sportNetworkRestore;
   }
-  function openWebPlayer(url, title, trigger) {
-    state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = title || 'Онлайн-трансляция';
+  function openWebPlayer(url, title, trigger, isTrailer) {
+    $('web-ime-open').hidden = Boolean(isTrailer);
+    state.youtubeTrailerActive = Boolean(isTrailer && url.indexOf(KZ_HELPER + '/trailer/youtube?id=') === 0);
+    state.webPlayerBaseTitle = title || 'Онлайн-трансляция';
+    state.webPlayerTrigger = trigger || null; $('web-player-title').textContent = state.webPlayerBaseTitle;
     $('web-ime-keyboard').hidden = true;
     $('web-player-frame').onload = function () { if (!$('web-player-view').hidden) $('web-player-frame').focus(); };
     $('web-player-frame').src = url; $('web-player-view').hidden = false; $('web-player-back').focus();
   }
   function closeWebPlayer() {
     if (!$('web-player-view') || $('web-player-view').hidden) return;
-    $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank'; $('web-ime-keyboard').hidden = true;
+    state.youtubeTrailerActive = false;
+    state.trailerFilm = null;
+    $('web-player-view').hidden = true; $('web-player-frame').src = 'about:blank'; $('web-ime-keyboard').hidden = true; $('web-ime-open').hidden = false;
     var trigger = state.webPlayerTrigger; state.webPlayerTrigger = null;
     if (trigger && document.body.contains(trigger)) trigger.focus();
   }
+  // The YouTube IFrame API wrapper reports progress just as Android's
+  // AndroidBridge does, but via postMessage from our own local HTML page.
+  window.addEventListener('message', function (event) {
+    if (!state.youtubeTrailerActive || $('web-player-view').hidden ||
+        event.source !== $('web-player-frame').contentWindow) return;
+    var data = event.data;
+    if (!data || data.type !== 'seena-youtube-trailer') return;
+    if (data.action === 'back') closeWebPlayer();
+    else if (data.action === 'search-russian') searchRussianTrailer();
+    else if (data.action === 'error') toast('YouTube: ошибка ' + (Number(data.code) || 'плеера'));
+    else if (data.action === 'progress') {
+      var current = Number(data.current) || 0, duration = Number(data.duration) || 0;
+      $('web-player-title').textContent = state.webPlayerBaseTitle +
+        (duration > 0 ? ' · ' + formatTime(current) + ' / ' + formatTime(duration) : '');
+    }
+  });
   async function imeInput(action, text) {
     try {
       var response = await fetchJson(KZ_HELPER + '/ime/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, text: text || '' }) });
@@ -435,6 +466,124 @@
       button.disabled = false;
     }
   }
+
+  function playTrailerSource(source, item, button, candidates) {
+    if (source.mode === 'youtube') {
+      // YouTube's own IFrame API with playVideo(), seeking and progress,
+      // matching the original Android implementation without AndroidBridge.
+      var url = KZ_HELPER + '/trailer/youtube?id=' + encodeURIComponent(source.videoId);
+      if (Array.isArray(candidates) && candidates.length > 1) {
+        var options = candidates.filter(function (clip) { return clip && clip.mode === 'youtube' &&
+          /^[A-Za-z0-9_-]{11}$/.test(String(clip.videoId || '')); }).slice(0, 12)
+          .map(function (clip) { return { id: clip.videoId, lang: clip.lang || '',
+            title: String(clip.name || '').slice(0, 90) }; });
+        if (options.length > 1) url += '&clips=' + encodeURIComponent(JSON.stringify(options));
+      }
+      state.trailerFilm = item;
+      openWebPlayer(url, item.title + ' · Трейлер', button, true);
+    } else if (source.mode === 'embed') {
+      openWebPlayer(source.url, item.title + ' · Трейлер', button, true);
+    } else if (source.mode === 'direct') {
+      playSource({ title: item.title, label: 'Трейлер', url: source.url, type: source.type || '',
+        history: false, trigger: button, backLabel: '← К карточке' });
+    } else {
+      throw new Error('Неизвестный формат трейлера');
+    }
+  }
+  async function searchRussianTrailer() {
+    // Optional, on-demand lookup: do not delay an already working English trailer.
+    // Reuse the existing YouTube-capable Yandex video resolver; never invent a video ID.
+    if (!state.youtubeTrailerActive || !state.trailerFilm || state.trailerRussianSearching) return;
+    var item = state.trailerFilm, frame = $('web-player-frame'),
+      currentFrame = frame.src;
+    state.trailerRussianSearching = true;
+    toast('Ищем YouTube-трейлер на русском: ' + item.title);
+    try {
+      var query = model.trailerSearchQuery(item) + ' на русском';
+      var results = await fetchJson(KZ_HELPER + '/video/search?q=' + encodeURIComponent(query));
+      var matches = model.trailerSearchResults(results && results.items, item)
+        .filter(function (video) {
+          return /русск|дубл|russian|на русском/i.test(String(video.title || ''));
+        });
+      for (var i = 0; i < Math.min(matches.length, 8); i += 1) {
+        if (!state.youtubeTrailerActive || frame.src !== currentFrame) return;
+        var candidate;
+        try {
+          candidate = await fetchJson(KZ_HELPER + '/video/playback?url=' +
+            encodeURIComponent(matches[i].preview));
+        } catch (_) { continue; }
+        if (!state.youtubeTrailerActive || frame.src !== currentFrame) return;
+        if (!candidate || candidate.status !== 'ready') continue;
+        var link = model.trailerSource({ trailer: candidate.url }, item);
+        if (!link || link.mode !== 'youtube') continue;
+        frame.contentWindow.postMessage({
+          type: 'seena-youtube-trailer-control', action: 'add-clip',
+          clip: { id: link.videoId, lang: 'ru', title: matches[i].title }
+        }, '*');
+        toast('Русский трейлер найден: переключаем ролик');
+        return;
+      }
+      toast('Русский YouTube-трейлер не найден. Текущий ролик сохранён.');
+    } catch (error) {
+      if (state.youtubeTrailerActive && frame.src === currentFrame)
+        toast('Поиск русского трейлера: ' + error.message);
+    } finally {
+      state.trailerRussianSearching = false;
+    }
+  }
+
+  async function openCardTrailer(item, button, isKinozal) {
+    if (button.disabled) return;
+    var requestId = (state.trailerRequestId || 0) + 1; state.trailerRequestId = requestId;
+    button.disabled = true; button.textContent = '…';
+    toast('Ищем трейлер: ' + item.title);
+    try {
+      var candidates = model.trailerCandidates(null, item);
+      var source = candidates[0] || model.trailerSource(null, item);
+      // Fetch details even if the catalog card has a trailer: a Russian alternate
+      // may be present alongside the original English teaser in videos.results.
+      if (!isKinozal) {
+        try {
+          var detail = state.detailItem && state.detailItem.id === item.id && state.detail
+            ? state.detail : await fetchJson(model.detailUrl(item.id));
+          candidates = model.trailerCandidates(detail, item);
+          source = candidates[0] || model.trailerSource(detail, item) || source;
+        } catch (_) { /* Offline detail: fall back to card trailer or video search. */ }
+      }
+      if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
+      if (source) {
+        playTrailerSource(source, item, button, candidates);
+        return;
+      }
+      // Use the existing TV video provider; never choose an arbitrary search hit.
+      var results = await fetchJson(KZ_HELPER + '/video/search?q=' +
+        encodeURIComponent(model.trailerSearchQuery(item)));
+      if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
+      var matches = model.trailerSearchResults(results.items, item);
+      if (!matches.length) throw new Error('Подходящий трейлер не найден');
+      for (var i = 0; i < Math.min(matches.length, 5); i += 1) {
+        var video;
+        try { video = await fetchJson(KZ_HELPER + '/video/playback?url=' + encodeURIComponent(matches[i].preview)); }
+        catch (_) { continue; }
+        if (requestId !== state.trailerRequestId || !document.body.contains(button) || button.closest('[hidden]')) return;
+        if (!video || video.status !== 'ready' || !video.url) continue;
+        var linked = model.trailerSource({ trailer: video.url }, item);
+        if (linked && linked.mode === 'youtube') {
+          playTrailerSource(linked, item, button);
+        } else {
+          playTrailerSource({ mode: video.mode === 'embed' ? 'embed' : 'direct',
+            url: video.url, type: video.type || '' }, item, button);
+        }
+        return;
+      }
+      throw new Error('Найденные трейлеры недоступны для воспроизведения');
+    } catch (error) {
+      if (requestId === state.trailerRequestId) toast('Трейлер: ' + error.message);
+    } finally {
+      button.disabled = false; button.textContent = '▶';
+    }
+  }
+
   async function searchVideo(query) {
     query = String(query || '').trim(); if (!query) { $('video-search-status').textContent = 'Введите запрос для поиска видео.'; return; }
     showBase('video'); clear($('video-grid')); $('video-search-status').textContent = 'Ищем видео…';
@@ -582,7 +731,7 @@
     var copy = document.createElement('div'); copy.className = 'poster-copy'; var title = document.createElement('strong'); title.textContent = item.title;
     var meta = document.createElement('small'), personalRating = ratings && ratings.get(localStorage, item.id); meta.textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм', personalRating ? 'Моя оценка ' + personalRating + '/10' : ''].filter(Boolean).join(' · ');
     var fmt = document.createElement('span'); fmt.className = 'kz-format'; fmt.textContent = item.format || '';
-    copy.append(title, meta, fmt); b.append(img, copy); b.addEventListener('click', function () { openKinozalDetail(item, b); }); return b;
+    copy.append(title, meta, fmt); b.append(img, copy); b.addEventListener('click', function () { openKinozalDetail(item, b); }); return posterTile(item, b, true);
   }
   function renderHistory() {
     var items = history.read(localStorage), grid = $('history-grid'); clear(grid);
@@ -804,7 +953,7 @@
   function renderKinozalSearchRelease(release) {
     var b=makeButton('', 'torrent-button kinozal-search-release', function(){playKinozalSearchTorrent(release);});
     var strong=document.createElement('strong'); strong.textContent=release.title; var small=document.createElement('small');
-    small.textContent=[release.quality,release.size,release.seeds||release.peers?'Сиды: '+release.seeds:'',release.peers?'Пиры: '+release.peers:'',release.uploaded].filter(Boolean).join(' · '); b.append(strong,small); return b;
+    small.textContent=['Кинозал',release.quality,release.size?'Размер: '+release.size:'', 'Сиды: '+release.seeds,release.peers?'Пиры: '+release.peers:'',release.uploaded].filter(Boolean).join(' · '); b.append(strong,small); return b;
   }
   async function loadKinozalSearch(append) {
     if (state.kzSearchLoading || !state.kzSearchQuery) return; state.kzSearchLoading=true; var page=append?state.kzSearchPage+1:0;
@@ -869,15 +1018,37 @@
     }
   }
   async function openKinozalDetail(item, trigger) {
+    state.trailerRequestId = (state.trailerRequestId || 0) + 1;
     state.kzDetail = null; state.kzDetailItem = item; renderKinozalPersonalRating();
     state.kzDetailTrigger = trigger || null; state.kzDetail = null; $('kinozal-detail-view').hidden = false; $('kinozal-detail-title').textContent = item.fullTitle || item.title; $('kinozal-detail-meta').textContent = item.year || ''; $('kinozal-detail-genres').textContent = ''; $('kinozal-detail-overview').textContent = 'Загрузка карточки…'; $('kinozal-tech').textContent = ''; $('kinozal-release-info').textContent = ''; clear($('kinozal-detail-badges')); clear($('kinozal-cast-list')); $('kinozal-credits-section').hidden = true; $('kinozal-cast-note').textContent = ''; if (safeImage(item.poster)) setImage($('kinozal-detail-poster'), item.poster); else $('kinozal-detail-poster').removeAttribute('src'); $('kinozal-detail-back').focus();
     try { var html = await kinozalGet('/details.php?id=' + encodeURIComponent(item.id), false); var d = parseKinozalDetail(html,item); state.kzDetail=d; $('kinozal-detail-title').textContent=d.title; $('kinozal-detail-meta').textContent=[d.year,d.country,d.duration].filter(Boolean).join(' · '); $('kinozal-detail-genres').textContent=d.genres; $('kinozal-detail-overview').textContent=d.overview; if(safeImage(d.poster))setImage($('kinozal-detail-poster'),d.poster); clear($('kinozal-detail-badges')); function kb(t,k){if(!t)return;var x=document.createElement('span');x.className='detail-badge '+(k||'');x.textContent=t;$('kinozal-detail-badges').appendChild(x);} if(d.kp)kb('КП '+d.kp,'rating'); if(d.imdb)kb('IMDb '+d.imdb,'imdb'); if(d.quality)kb(d.quality,''); $('kinozal-tech').textContent=[d.quality&&('Качество: '+d.quality),d.video&&('Видео: '+d.video),d.audio&&('Аудио: '+d.audio),d.language&&('Язык: '+d.language),d.size&&('Размер: '+d.size),d.duration&&('Продолжительность: '+d.duration)].filter(Boolean).join('\n'); $('kinozal-release-info').textContent=[d.director&&('Режиссёр: '+d.director),d.cast&&('В ролях: '+d.cast)].filter(Boolean).join('\n'); loadKinozalCast(d); }
     catch(e){$('kinozal-detail-overview').textContent='Не удалось загрузить карточку: '+e.message;toast(e.message);}
   }
-  function closeKinozalDetail() { $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
+  function closeKinozalDetail() { state.trailerRequestId = (state.trailerRequestId || 0) + 1; $('kinozal-detail-view').hidden = true; if (state.view === 'history') { renderHistory(); var h = $('history-grid').querySelector('.poster-card'); if (h) h.focus(); else $('history-open').focus(); return; } if (state.kzDetailTrigger && document.body.contains(state.kzDetailTrigger)) state.kzDetailTrigger.focus(); else { var f=$('kinozal-grid').querySelector('button'); if(f)f.focus(); } }
+  function renderKinozalTorrentVariants() {
+    var list = $('kinozal-torrent-list'); clear(list);
+    if (!state.kzDetail) return;
+    model.sortTorrentItems(state.kzDetail.variants, state.kinozalTorrentSort).forEach(function (v) {
+      var b = makeButton('', 'torrent-button', function () { playKinozalTorrent(v); });
+      var strong = document.createElement('strong');
+      strong.textContent = v.current ? 'Текущая: ' + v.title : v.title;
+      var small = document.createElement('small');
+      var voice = model.torrentVoiceLabel(v);
+      small.textContent = ['Кинозал', v.format, voice ? 'Озвучка: ' + voice : '',
+        v.size ? 'Размер: ' + v.size : '', 'Сиды: ' + v.seeds,
+        v.peers ? 'Пиры: ' + v.peers : ''].filter(Boolean).join(' · ');
+      b.append(strong, small); list.appendChild(b);
+    });
+  }
   function openKinozalTorrents() {
-    if(!state.kzDetail){toast('Карточка ещё загружается');return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-status').textContent='Выберите качество/раздачу. Чем больше сидов, тем стабильнее старт.'; $('kinozal-torrent-dialog').hidden=false;
-    state.kzDetail.variants.forEach(function(v){var b=makeButton('', 'torrent-button', function(){playKinozalTorrent(v);});var strong=document.createElement('strong');strong.textContent=v.current?'Текущая: '+v.title:v.title;var small=document.createElement('small');small.textContent=[v.format,v.size,v.seeds?'Сиды: '+v.seeds:'',v.peers?'Пиры: '+v.peers:''].filter(Boolean).join(' · ');b.append(strong,small);list.appendChild(b);}); var first=list.querySelector('button');if(first)first.focus();
+    if (!state.kzDetail) { toast('Карточка ещё загружается'); return; }
+    $('kinozal-torrent-status').textContent =
+      'Выберите раздачу. Сортировка по сидам, качеству или озвучке.';
+    $('kinozal-torrent-sortbar').hidden = false;
+    $('kinozal-torrent-dialog').hidden = false;
+    renderKinozalTorrentVariants();
+    var first = $('kinozal-torrent-list').querySelector('button');
+    if (first) first.focus();
   }
   function closeKinozalTorrents(){ $('kinozal-torrent-dialog').hidden=true; $('kinozal-watch').focus(); }
   async function uploadKinozalTorrent(release, context) {
@@ -887,7 +1058,7 @@
   }
   async function playKinozalTorrent(release) {
     if(!(await checkTorrServer(true))){toast('TorrServer не запущен');return;} $('kinozal-torrent-status').textContent='Скачиваем .torrent с Кинозала и передаём TorrServer…';
-    try { var st=await uploadKinozalTorrent(release),files=(st.file_stats||[]).filter(function(f){return isVideoFile(f.path);});if(!files.length)files=st.file_stats||[];if(!files.length)throw new Error('В раздаче не найдено файлов'); if(files.length===1){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,files[0]);return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-status').textContent='Выберите файл или серию:';files.forEach(function(file){var b=makeButton(file.path,'torrent-button',function(){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,file);});var sm=document.createElement('small');sm.textContent=file.length?(file.length/1073741824).toFixed(2)+' ГБ':'';b.appendChild(sm);list.appendChild(b);});var first=list.querySelector('button');if(first)first.focus(); }
+    try { var st=await uploadKinozalTorrent(release),files=(st.file_stats||[]).filter(function(f){return isVideoFile(f.path);});if(!files.length)files=st.file_stats||[];if(!files.length)throw new Error('В раздаче не найдено файлов'); if(files.length===1){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,files[0]);return;} var list=$('kinozal-torrent-list');clear(list);$('kinozal-torrent-sortbar').hidden=true;$('kinozal-torrent-status').textContent='Выберите файл или серию:';files.forEach(function(file){var b=makeButton(file.path,'torrent-button',function(){$('kinozal-torrent-dialog').hidden=true;playTorrentFile(st.hash,file);});var sm=document.createElement('small');sm.textContent=file.length?(file.length/1073741824).toFixed(2)+' ГБ':'';b.appendChild(sm);list.appendChild(b);});var first=list.querySelector('button');if(first)first.focus(); }
     catch(e){$('kinozal-torrent-status').textContent='Ошибка: '+e.message;toast(e.message);}
   }
 
@@ -937,7 +1108,8 @@
   function closePerson() { $('person-view').hidden = true; if (state.personTrigger && document.body.contains(state.personTrigger)) state.personTrigger.focus(); else $('detail-back').focus(); }
 
   async function openDetail(item, trigger) {
-    state.detailTrigger = trigger || null; state.detailItem = item; state.detail = null; state.sources = []; state.torrentsLoaded = false; $('person-view').hidden = true; $('detail-view').hidden = false; $('torrent-section').hidden = true; clear($('torrent-list'));
+    state.trailerRequestId = (state.trailerRequestId || 0) + 1;
+    state.sourceRequestId = (state.sourceRequestId || 0) + 1; state.detailTrigger = trigger || null; state.detailItem = item; state.detail = null; state.sources = []; state.torrentsLoaded = false; state.torrentRows = []; $('person-view').hidden = true; $('detail-view').hidden = false; $('torrent-section').hidden = true; clear($('torrent-list'));
     $('detail-title').textContent = item.title; $('detail-meta').textContent = [item.year, item.mediaType === 'tv' ? 'Сериал' : 'Фильм'].filter(Boolean).join(' · '); $('detail-genres').textContent = ''; $('detail-overview').textContent = item.overview || 'Описание отсутствует';
     if (safeImage(item.poster)) setImage($('detail-poster'), item.poster); else $('detail-poster').removeAttribute('src'); $('detail-poster').alt = item.title; $('detail-backdrop').style.backgroundImage = safeImage(item.backdrop) ? 'url("' + item.backdrop.replace(/"/g, '%22') + '")' : '';
     clear($('detail-badges')); clear($('season-tabs')); clear($('source-list')); clear($('cast-list')); clear($('similar-grid')); $('credits-section').hidden = true; $('similar-section').hidden = true; $('source-note').textContent = 'Загружаем карточку и источники…'; updateFavoriteButton(); renderPersonalRating(); $('detail-back').focus();
@@ -950,13 +1122,46 @@
     } catch (error) { $('source-note').textContent = 'Не удалось загрузить карточку: ' + error.message; toast('Ошибка карточки: ' + error.message); }
   }
   function visibleSources() { if (state.season == null) return state.sources.filter(function (x) { return x.season == null; }); return state.sources.filter(function (x) { return x.season === state.season; }); }
+  async function playOnlineSource(source, button) {
+    if (!source.playbackKey) {
+      playSource(Object.assign({}, source, { trigger: button }));
+      return;
+    }
+    var url = model.veoveoStreamUrl(source.playbackKey);
+    if (!url) { toast('Veoveo: некорректный ключ воспроизведения.'); return; }
+    var item = state.detailItem, requestId = (state.sourceRequestId || 0) + 1;
+    state.sourceRequestId = requestId;
+    button.disabled = true;
+    $('source-note').textContent = 'Veoveo: получаем ссылку на видео…';
+    try {
+      // Same API origin as the rest of Seena; no arbitrary URLs from catalog data.
+      var response = await fetchJson(url);
+      if (state.sourceRequestId !== requestId || state.detailItem !== item ||
+          $('detail-view').hidden) return;
+      var media = model.veoveoResolvedMedia(response);
+      if (!media) throw new Error('сервер не вернул корректный m3u8/filepath');
+      playSource(Object.assign({}, source, media, { trigger: button }));
+      $('source-note').textContent = 'Выберите озвучку и качество, затем нажмите OK.';
+    } catch (error) {
+      if (state.sourceRequestId === requestId && state.detailItem === item &&
+          !$('detail-view').hidden) {
+        $('source-note').textContent = 'Veoveo: ' + error.message +
+          '. Выберите другой источник или «Торренты».';
+        toast('Veoveo: ' + error.message);
+      }
+    } finally {
+      button.disabled = false;
+    }
+  }
   function renderSources() {
     var list = $('source-list'); clear(list); Array.from($('season-tabs').children).forEach(function (b) { b.classList.toggle('active', Number(b.dataset.season) === state.season); }); var sources = visibleSources();
     sources.forEach(function (source) {
-      var b = makeButton(source.label, 'source-button', function () { playSource(source); });
+      var b = makeButton(source.label, 'source-button', function () { playOnlineSource(source, b); });
       var small = document.createElement('small');
       var format = source.type.indexOf('mpegurl') !== -1 ? 'HLS' : (source.type.indexOf('mp4') !== -1 ? 'MP4' : 'Видео');
-      small.textContent = ['Качество: ' + (source.quality || 'авто'), source.provider, format].filter(Boolean).join(' · ');
+      small.textContent = ['Качество: ' + (source.quality || 'авто'),
+        source.provider, source.playbackKey ? 'Ссылка по запросу' : format]
+        .filter(Boolean).join(' · ');
       b.appendChild(small); list.appendChild(b);
     });
     $('source-note').textContent = sources.length ? 'Выберите озвучку и качество, затем нажмите OK.' : 'Прямых видеопотоков нет. Проверьте «Торренты».';
@@ -1012,14 +1217,78 @@
     } catch (error) { $('torrent-note').textContent = 'TorrServer: ' + error.message; toast(error.message); }
   }
   function playTorrentFile(hash, file) { playSource({ label: 'TorrServer · ' + file.path.split('/').pop(), url: serverMediaUrl('/play/' + encodeURIComponent(hash) + '/' + encodeURIComponent(file.id)), type: '', torrent: true }); }
-  function torrentLabel(torrent) { return [torrent.quality, torrent.voice, torrent.size ? String(torrent.size) : '', torrent.seeders ? 'S:' + torrent.seeders : ''].filter(Boolean).join(' · '); }
+  function torrentBadge(parent, label, kind) {
+    var badge = document.createElement('span');
+    badge.className = 'torrent-meta-badge' + (kind ? ' ' + kind : '');
+    badge.textContent = label; parent.appendChild(badge);
+  }
+  function renderTorrentRow(torrent) {
+    var b = makeButton('', 'torrent-button seena-torrent-card', function () { playTorrent(torrent); });
+    var title = document.createElement('strong');
+    title.className = 'torrent-release-name';
+    title.textContent = torrent.name; b.appendChild(title);
+    var info = document.createElement('small');
+    info.className = 'torrent-release-info';
+    info.textContent = [torrent.quality, torrent.voice].filter(Boolean).join(' · ');
+    if (info.textContent) b.appendChild(info);
+    var meta = document.createElement('div');
+    meta.className = 'torrent-meta-row';
+    torrentBadge(meta, 'Площадка: ' + (torrent.platform || 'не указана'), 'torrent-meta-platform');
+    torrentBadge(meta, 'Размер: ' + (torrent.size || '—'), 'torrent-meta-size');
+    torrentBadge(meta, 'Сиды: ' + (torrent.seeders === null ? '—' : torrent.seeders), 'torrent-meta-seeders');
+    if (torrent.peers !== null) torrentBadge(meta, 'Пиры: ' + torrent.peers, 'torrent-meta-peers');
+    b.appendChild(meta);
+    return b;
+  }
+  function renderTorrentRows() {
+    var list = $('torrent-list'); clear(list);
+    model.sortTorrentItems(state.torrentRows, state.torrentSort)
+      .forEach(function (torrent) { list.appendChild(renderTorrentRow(torrent)); });
+  }
+  function changeTorrentSort(kind, mode) {
+    if (['seeds', 'quality', 'voice'].indexOf(mode) === -1 ||
+        ['seena', 'kinozal'].indexOf(kind) === -1) return;
+    if (kind === 'seena') {
+      state.torrentSort = mode;
+      if (state.torrentsLoaded) renderTorrentRows();
+    } else {
+      state.kinozalTorrentSort = mode;
+      if (!$('kinozal-torrent-dialog').hidden && state.kzDetail &&
+          !$('kinozal-torrent-sortbar').hidden) renderKinozalTorrentVariants();
+    }
+    Array.from(document.querySelectorAll('.torrent-sort-option')).forEach(function (button) {
+      if (button.dataset.torrentList !== kind) return;
+      var selected = button.dataset.torrentSort === mode;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    var title = mode === 'seeds' ? 'сидам ↓' : mode === 'quality' ? 'качеству ↓' : 'озвучке А–Я';
+    if (kind === 'seena') $('torrent-note').textContent =
+      'Сортировка по ' + title + '. Нажмите OK на нужной раздаче.';
+    else $('kinozal-torrent-status').textContent = 'Сортировка по ' + title + '. Выберите раздачу.';
+  }
   async function openTorrents() {
     if (!state.detailItem) return; $('torrent-section').hidden = false; $('torrent-note').textContent = 'Загружаем торренты…'; $('torrent-section').scrollIntoView({ block: 'start' }); checkTorrServer(true);
-    if (state.torrentsLoaded) { var ex = $('torrent-list').querySelector('button'); if (ex) ex.focus(); return; } clear($('torrent-list'));
-    try { var response = await fetchJson(model.torrentsUrl(state.detailItem.id)); var torrents = model.torrentItems(response); state.torrentsLoaded = true;
-      torrents.forEach(function (torrent) { var b = makeButton(torrent.name, 'torrent-button', function () { playTorrent(torrent); }); var small = document.createElement('small'); small.textContent = torrentLabel(torrent); b.appendChild(small); $('torrent-list').appendChild(b); });
-      $('torrent-note').textContent = torrents.length ? 'Выберите торрент — Seena передаст magnet/link локальному TorrServer.' : 'Для этого материала торренты не найдены.'; var first = $('torrent-list').querySelector('button'); if (first) first.focus();
-    } catch (error) { $('torrent-note').textContent = 'Не удалось загрузить торренты: ' + error.message; toast('Торренты недоступны: ' + error.message); }
+    if (state.torrentsLoaded) {
+      renderTorrentRows(); var ex = $('torrent-list').querySelector('button');
+      if (ex) ex.focus(); return;
+    }
+    clear($('torrent-list'));
+    var detailId = state.detailItem.id;
+    try {
+      var response = await fetchJson(model.torrentsUrl(detailId));
+      if (!state.detailItem || state.detailItem.id !== detailId || $('torrent-section').hidden) return;
+      state.torrentRows = model.torrentItems(response); state.torrentsLoaded = true;
+      renderTorrentRows();
+      $('torrent-note').textContent = state.torrentRows.length ?
+        'Выберите раздачу. Сортировка по сидам, качеству или озвучке.' :
+        'Для этого материала торренты не найдены.';
+      var first = $('torrent-list').querySelector('button'); if (first) first.focus();
+    } catch (error) {
+      if (!state.detailItem || state.detailItem.id !== detailId || $('torrent-section').hidden) return;
+      $('torrent-note').textContent = 'Не удалось загрузить торренты: ' + error.message;
+      toast('Торренты недоступны: ' + error.message);
+    }
   }
   function closeTorrents() { $('torrent-section').hidden = true; $('torrents-open').focus(); }
   function openServerDialog() { var s = serverSettings(); $('server-url').value = s.url; $('server-user').value = s.user; $('server-pass').value = s.pass; $('server-dialog-status').textContent = ''; $('server-dialog').hidden = false; $('server-url').focus(); }
@@ -1097,6 +1366,7 @@
   }
 
   function back() {
+    state.trailerRequestId = (state.trailerRequestId || 0) + 1;
     if (!$('web-player-view').hidden) { closeWebPlayer(); return; }
     if (!$('exit-dialog').hidden) { closeExitDialog(); return; }
     if (!$('cache-dialog').hidden) { closeCacheSettings(); return; }
@@ -1152,6 +1422,7 @@
     if (!delta) return;
     event.preventDefault();
     var current = document.activeElement, chosen = null;
+    if (current.classList && current.classList.contains('poster-trailer')) current = current.parentNode.querySelector('.poster-card') || current;
     if (cards.indexOf(current) < 0) chosen = delta > 0 ? cards[0] : cards[cards.length - 1];
     else {
       var rect = current.getBoundingClientRect(), cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2, score = Infinity;
@@ -1182,6 +1453,11 @@
       var pd = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (pd[key]) { event.preventDefault(); moveFocus(pd[key]); return; }
     }
     if (document.activeElement.tagName === 'INPUT') return;
+    // The Play key on the remote launches the trailer of the focused poster.
+    if (key === 415 && document.activeElement.classList.contains('poster-card')) {
+      var trailer = document.activeElement.parentNode.querySelector('.poster-trailer');
+      if (trailer) { event.preventDefault(); trailer.click(); return; }
+    }
     if ((key === 37 || key === 39) && $('top-menu').contains(document.activeElement)) { event.preventDefault(); moveTopMenu(key === 37 ? 'left' : 'right'); return; }
     var dirs = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' }; if (dirs[key]) { event.preventDefault(); moveFocus(dirs[key]); } else if (key === 13 && document.activeElement.tagName === 'BUTTON') { event.preventDefault(); document.activeElement.click(); }
   });
@@ -1213,7 +1489,12 @@
   }
   async function openIptv() { showBase('tv'); $('tv-service-status').textContent = 'Загружаем открытый каталог IPTV…'; renderIptv(iptvBuiltins); try { var response = await fetchJson(KZ_HELPER + '/iptv/playlist?url=' + encodeURIComponent('https://iptv-org.github.io/iptv/countries/ru.m3u')); state.iptvItems = iptvBuiltins.concat(response.channels || []); renderIptv(state.iptvItems); $('tv-service-status').textContent = 'Каналов: ' + state.iptvItems.length + '. Доступность отдельных потоков зависит от вещателя.'; } catch (error) { $('tv-service-status').textContent = 'Показаны проверенные каналы: ' + error.message; } var first = $('iptv-grid').querySelector('.service-card'); if (first) first.focus(); }
   $('tv-open').addEventListener('click', openIptv);
-  $('kinozal-open').addEventListener('click', async function () { showBase('kinozal'); try { await restoreSportNetwork(); } catch (_) { return; } if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 24 * 60 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-content-refresh').addEventListener('click', refreshKinozalContent); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  $('kinozal-open').addEventListener('click', async function () { showBase('kinozal'); try { await restoreSportNetwork(); } catch (_) { return; } if (!state.kzLoaded || Date.now() - state.kzLoadedAt >= 24 * 60 * 60 * 1000) loadKinozal(false); else { var first = $('kinozal-grid').querySelector('button'); if (first) first.focus(); } }); $('kinozal-more').addEventListener('click', function () { loadKinozal(true); }); $('kinozal-filter-open').addEventListener('click', openKinozalFilter); $('kinozal-content-refresh').addEventListener('click', refreshKinozalContent); $('kinozal-filter-apply').addEventListener('click', applyKinozalFilter); $('kinozal-filter-reset').addEventListener('click', resetKinozalFilter); $('kinozal-filter-cancel').addEventListener('click', closeKinozalFilter); $('kinozal-account-open').addEventListener('click', openKinozalAccount); $('kinozal-session-refresh').addEventListener('click', refreshKinozalSession); $('kinozal-account-remember').addEventListener('click', toggleKinozalRemember); $('kinozal-account-login').addEventListener('click', loginKinozalAccount); $('kinozal-account-test').addEventListener('click', testKinozalAccount); $('kinozal-account-save').addEventListener('click', saveKinozalAccount); $('kinozal-account-cancel').addEventListener('click', closeKinozalAccount); $('kinozal-detail-back').addEventListener('click', closeKinozalDetail); $('kinozal-trailer').addEventListener('click', function () { if (state.kzDetailItem) openCardTrailer(state.kzDetailItem, this, true); }); $('kinozal-watch').addEventListener('click', openKinozalTorrents); $('kinozal-torrent-cancel').addEventListener('click', closeKinozalTorrents);
+  Array.from(document.querySelectorAll('.torrent-sort-option')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      changeTorrentSort(button.dataset.torrentList, button.dataset.torrentSort);
+    });
+  });
   $('cache-open').addEventListener('click', openCacheSettings); $('cache-close').addEventListener('click', closeCacheSettings); $('cache-clear').addEventListener('click', clearSeenaCache);
   Array.from(document.querySelectorAll('.cache-size')).forEach(function (button) { button.addEventListener('click', function () { setCacheLimit(Number(button.dataset.cacheMb), button); }); });
   ['kinozal-account-user', 'kinozal-account-pass'].forEach(function (id) {
@@ -1233,7 +1514,7 @@
     if (kinozalSystemKeyboardVisible) hideKinozalKeyboard();
   });
   $('web-player-back').addEventListener('click', closeWebPlayer); $('web-ime-open').addEventListener('click', openWebImeKeyboard);
-  $('detail-back').addEventListener('click', back); $('person-back').addEventListener('click', closePerson); $('player-back').addEventListener('click', back); $('play-now').addEventListener('click', chooseSource); $('torrents-open').addEventListener('click', openTorrents); $('detail-kinozal').addEventListener('click', openKinozalSearch); $('kinozal-search-more').addEventListener('click', function(){loadKinozalSearch(true);}); $('kinozal-search-cancel').addEventListener('click', closeKinozalSearch); $('torrent-close').addEventListener('click', closeTorrents); $('favorite-toggle').addEventListener('click', toggleFavorite);
+  $('detail-back').addEventListener('click', back); $('detail-trailer').addEventListener('click', function () { if (state.detailItem) openCardTrailer(state.detailItem, this, false); }); $('person-back').addEventListener('click', closePerson); $('player-back').addEventListener('click', back); $('play-now').addEventListener('click', chooseSource); $('torrents-open').addEventListener('click', openTorrents); $('detail-kinozal').addEventListener('click', openKinozalSearch); $('kinozal-search-more').addEventListener('click', function(){loadKinozalSearch(true);}); $('kinozal-search-cancel').addEventListener('click', closeKinozalSearch); $('torrent-close').addEventListener('click', closeTorrents); $('favorite-toggle').addEventListener('click', toggleFavorite);
   $('torrserver-settings').addEventListener('click', openServerDialog); $('server-cancel').addEventListener('click', closeServerDialog); $('server-test').addEventListener('click', testServerDialog); $('server-save').addEventListener('click', saveServerDialog);
   $('exit-cancel').addEventListener('click', closeExitDialog); $('exit-confirm').addEventListener('click', exitApp);
   $('player-rewind').addEventListener('click', function () { seekBy(-10); }); $('player-forward').addEventListener('click', function () { seekBy(30); }); $('player-stop').addEventListener('click', stopPlayer); $('player-playpause').addEventListener('click', function () { var v = $('player'); if (v.paused) v.play(); else v.pause(); }); $('player-audio').addEventListener('click', function () { openTrackMenu('audio'); }); $('player-subs').addEventListener('click', function () { openTrackMenu('subs'); }); $('track-menu-close').addEventListener('click', closeTrackMenu); $('player-progress').addEventListener('click', seekToPointer); $('player').addEventListener('click', toggleOsd);

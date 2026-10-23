@@ -78,8 +78,43 @@
     return m ? m[1] + 'p' : '';
   }
 
+  // Android Veoveo playback keys are veo:<content-id>:<season>:<episode>.
+  // The upstream API host is fixed, never sourced from an untrusted movie row.
+  function veoveoStreamUrl(key) {
+    var match = /^veo:([1-9]\d{0,18}):(\d{1,5}):(\d{1,5})$/.exec(String(key || ''));
+    if (!match || Number(match[2]) > 9999 || Number(match[3]) > 9999) return '';
+    var url = BASE + 'veoveo/stream?content-id=' + encodeURIComponent(match[1]);
+    if (Number(match[2]) > 0) url += '&season=' + encodeURIComponent(match[2]);
+    if (Number(match[3]) > 0) url += '&episode=' + encodeURIComponent(match[3]);
+    return url;
+  }
+
+  function veoveoResolvedMedia(response) {
+    // Android fetchM3u8FromApi reads top-level m3u8, then filepath.
+    if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+    var m3u8 = typeof response.m3u8 === 'string' ? response.m3u8.trim() : '';
+    var filepath = typeof response.filepath === 'string' ? response.filepath.trim() : '';
+    var url = m3u8 || filepath;
+    if (!validVideoUrl(url)) return null;
+    try {
+      var parsed = new URL(url);
+      if (parsed.username || parsed.password) return null;
+    } catch (_) { return null; }
+    return { url: url, type: m3u8 ? 'application/vnd.apple.mpegurl' :
+      /\.m3u8(?:\?|$)/i.test(url) ? 'application/vnd.apple.mpegurl' :
+      /\.mp4(?:\?|$)/i.test(url) ? 'video/mp4' : '' };
+  }
+
   function directSources(detail) {
-    var catalog = detail && (detail.stream_lists_veoveo || detail.streamListsVeoveo || detail.stream_lists || detail.streamLists) || {};
+    detail = detail || {};
+    // Android MovieResponse exposes independent stream catalogs. A single ||
+    // fallback hides HDVB, streamCatalog and streamLists when Veoveo exists.
+    var catalogs = [
+      { data: detail.stream_lists_veoveo || detail.streamListsVeoveo, provider: 'Veoveo' },
+      { data: detail.stream_lists_hdvb || detail.streamListsHdvb, provider: 'HDVB' },
+      { data: detail.stream_lists || detail.streamLists, provider: 'Seena' },
+      { data: detail.stream_catalog || detail.streamCatalog, provider: 'Каталог' }
+    ];
     var out = [], seen = {};
     var qualityRank = {'2160p': 90, '1440p': 80, '1080p': 70, '720p': 60, '480p': 50, '360p': 40, '240p': 30, '144p': 20, 'авто': 10};
 
@@ -113,10 +148,38 @@
       if (u) push(u, voiceLabel(value) === 'Озвучка' ? voice : voiceLabel(value), qualityOf(value, keyHint || fallbackQuality), prefix, seasonNumber, providerOf(value) || provider);
     }
 
-    function addVoice(voice, prefix, seasonNumber) {
+    function addVoice(voice, prefix, seasonNumber, episodeNumber, catalogId, catalogProvider) {
       if (!voice) return;
       var vlabel = voiceLabel(voice), q = qualityOf(voice, ''), provider = providerOf(voice);
       var direct = rawUrl(voice); if (direct) push(direct, vlabel, q, prefix, seasonNumber, provider);
+      // getSource() explicitly recognizes Veoveo; the dedicated Veoveo
+      // catalog also supplies provider when sourceRaw is absent.
+      var sourceRaw = String(first(voice,
+        ['sourceRaw', 'source_raw', 'source', 'provider'], '')).trim().toLowerCase();
+      var isVeoveo = sourceRaw === 'veoveo' ||
+        (!sourceRaw && catalogProvider === 'Veoveo');
+      if (isVeoveo && typeof voice === 'object') {
+        var contentId = String(first(voice, ['veoContentId', 'veo_content_id',
+          'contentId', 'content_id'], catalogId || '')).trim();
+        var sn = first(voice, ['season'], seasonNumber);
+        var ep = first(voice, ['episode'], episodeNumber);
+        sn = sn == null ? 0 : Number(sn);
+        ep = ep == null ? 0 : Number(ep);
+        if (/^[1-9]\d{0,18}$/.test(contentId) && Number.isInteger(sn) &&
+            Number.isInteger(ep) && sn >= 0 && ep >= 0 && sn <= 9999 && ep <= 9999) {
+          var playbackKey = 'veo:' + contentId + ':' + sn + ':' + ep;
+          var label = (prefix ? prefix + ' · ' : '') + vlabel;
+          var identity = playbackKey + '|' + label;
+          if (!seen[identity]) {
+            seen[identity] = true;
+            out.push({ label: label, voice: vlabel, provider: 'Veoveo',
+              quality: q || 'авто', qualityRank: qualityRank[q] || 0,
+              season: seasonNumber == null ? (sn || null) : Number(seasonNumber),
+              url: '', playbackKey: playbackKey,
+              type: 'application/vnd.apple.mpegurl' });
+          }
+        }
+      }
       ['sources', 'qualityOptions', 'quality_options', 'qualities', 'urls', 'files', 'directUrls', 'direct_urls'].forEach(function (name) {
         var variants = voice[name];
         if (Array.isArray(variants)) variants.forEach(function (v) { addVariant(v, vlabel, q, prefix, seasonNumber, provider, ''); });
@@ -124,13 +187,37 @@
       });
     }
 
-    (catalog.movieVoices || catalog.movie_voices || catalog.apiVoices || catalog.api_voices || []).forEach(function (voice) { addVoice(voice, '', null); });
-    (catalog.seasons || []).forEach(function (season) {
-      (season.episodes || []).forEach(function (episode) {
-        var seasonNumber = first(season, ['seasonNumber', 'season_number'], first(episode, ['seasonNumber', 'season_number'], null));
-        var episodeNumber = first(episode, ['episodeNumber', 'episode_number', 'number'], '?');
-        var label = 'Сезон ' + (seasonNumber || '?') + ' · Серия ' + episodeNumber;
-        (episode.voices || episode.apiVoices || episode.api_voices || []).forEach(function (voice) { addVoice(voice, label, seasonNumber); });
+    var visited = [];
+    catalogs.forEach(function (entry) {
+      var catalog = entry.data;
+      if (!catalog || typeof catalog !== 'object' || visited.indexOf(catalog) >= 0) return;
+      visited.push(catalog);
+      function useVoice(voice, prefix, seasonNumber, episodeNumber) {
+        // Keep explicit provider from API, otherwise use the catalog origin.
+        if (voice && typeof voice === 'object' && !providerOf(voice)) {
+          voice = Object.assign({}, voice, { provider: entry.provider });
+        }
+        addVoice(voice, prefix, seasonNumber, episodeNumber,
+          first(catalog, ['contentId', 'content_id'], null), entry.provider);
+      }
+      if (Array.isArray(catalog)) {
+        catalog.forEach(function (voice) { useVoice(voice, '', null); }); return;
+      }
+      // Android lists may be present under multiple aliases at once.
+      ['movieVoices', 'movie_voices', 'apiVoices', 'api_voices', 'voices'].forEach(function (key) {
+        if (Array.isArray(catalog[key])) catalog[key].forEach(function (voice) { useVoice(voice, '', null); });
+      });
+      if (!Array.isArray(catalog.seasons)) return;
+      catalog.seasons.forEach(function (season) {
+        if (!Array.isArray(season.episodes)) return;
+        season.episodes.forEach(function (episode) {
+          var seasonNumber = first(season, ['seasonNumber', 'season_number'], first(episode, ['seasonNumber', 'season_number'], null));
+          var episodeNumber = first(episode, ['episodeNumber', 'episode_number', 'number'], '?');
+          var label = 'Сезон ' + (seasonNumber == null ? '?' : seasonNumber) + ' · Серия ' + episodeNumber;
+          ['voices', 'apiVoices', 'api_voices'].forEach(function (key) {
+            if (Array.isArray(episode[key])) episode[key].forEach(function (voice) { useVoice(voice, label, seasonNumber, episodeNumber); });
+          });
+        });
       });
     });
     out.sort(function (a, b) { var c = a.label.localeCompare(b.label, 'ru'); return c || b.qualityRank - a.qualityRank; });
@@ -209,6 +296,62 @@
     };
   }
 
+  // API torrent listings may label a tracker in several ways. Keep the source
+  // label from the API; infer known names from an actual tracker URL only.
+  function torrentPlatform(item) {
+    var keys = ['tracker_name', 'trackerName', 'tracker', 'torrent_tracker',
+      'torrentTracker', 'tracker_title', 'trackerTitle', 'source_name',
+      'sourceName', 'torrent_source', 'torrentSource', 'site_name', 'siteName',
+      'site', 'source', 'provider_name', 'providerName', 'provider',
+      'indexer_name', 'indexerName', 'indexer', 'origin'];
+    function asLabel(value) {
+      if (!value) return '';
+      if (Array.isArray(value)) return asLabel(value[0]);
+      if (typeof value === 'object') return asLabel(first(value,
+        ['name', 'title', 'label', 'site', 'domain', 'url', 'host'], ''));
+      if (typeof value !== 'string') return '';
+      var label = value.trim();
+      if (!label) return '';
+      // Normalize the three common Seena tracker names for the TV labels.
+      if (/bit[.-]?ru/i.test(label)) return 'BitRu';
+      if (/korsars?/i.test(label)) return 'Korsars';
+      if (/lost[.-]?film/i.test(label)) return 'LostFilm';
+      if (/^https?:\/\//i.test(label)) {
+        try { label = new URL(label).hostname.replace(/^www\./i, ''); }
+        catch (_) { return ''; }
+      }
+      if (/^(?:unknown|null|none|torrent|tracker|magnet|n\/a)$/i.test(label)) return '';
+      return label.slice(0, 65);
+    }
+    for (var i = 0; i < keys.length; i += 1) {
+      var name = asLabel(item && item[keys[i]]);
+      if (name) return name;
+    }
+    var trackerUrl = first(item, ['tracker_url', 'trackerUrl', 'site_url', 'siteUrl'], '');
+    return asLabel(trackerUrl);
+  }
+
+  function torrentCount(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'string') value = value.replace(/[\s,]/g, '').trim();
+    var count = Number(value);
+    return isFinite(count) && count >= 0 ? Math.floor(count) : null;
+  }
+
+  function torrentSizeLabel(value) {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'string' && /[^\d\s]/.test(value) && !/^\d+(?:[\s,]\d{3})*$/.test(value.trim()))
+      return value.trim(); // API has already supplied a human-readable unit.
+    var bytes = Number(String(value).replace(/[\s,]/g, ''));
+    if (!isFinite(bytes) || bytes < 0) return '';
+    var units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+    var unit = 0;
+    while (bytes >= 1024 && unit < units.length - 1) { bytes /= 1024; unit += 1; }
+    return (unit === 0 ? String(Math.floor(bytes)) :
+      bytes >= 100 ? bytes.toFixed(0) : bytes >= 10 ? bytes.toFixed(1) : bytes.toFixed(2)) +
+      ' ' + units[unit];
+  }
+
   function torrentItems(response) {
     var rows = [];
     if (Array.isArray(response)) rows = response;
@@ -216,21 +359,92 @@
     else if (response && Array.isArray(response.torrents)) rows = response.torrents;
     else if (response && response.data && Array.isArray(response.data.torrents)) rows = response.data.torrents;
     else if (response && Array.isArray(response.results)) rows = response.results;
-    return rows.map(function (item, index) {
+    return rows.filter(function (item) { return item && typeof item === 'object'; })
+      .map(function (item, index) {
       var quality = first(item, ['quality', 'quality_label', 'qualityLabel'], '');
       return {
         id: String(first(item, ['id', 'torrent_idx', 'torrentIdx'], index)),
         name: first(item, ['name', 'title', 'filename'], 'Торрент'),
         quality: quality ? String(quality) : '',
         voice: first(item, ['voice', 'voice_label', 'voiceLabel'], stringList(first(item, ['voices'], [])).join(', ')),
-        size: first(item, ['size', 'torrent_size', 'torrentSize', 'size_display', 'sizeDisplay'], ''),
-        seeders: Number(first(item, ['seeders', 'seeds'], 0)) || 0,
-        peers: Number(first(item, ['peers', 'leechers'], 0)) || 0,
+        platform: torrentPlatform(item),
+        size: torrentSizeLabel(first(item, ['size_display', 'sizeDisplay',
+          'size', 'torrent_size', 'torrentSize', 'total_size', 'totalSize', 'file_size', 'fileSize'], '')),
+        seeders: torrentCount(first(item, ['seeders', 'seeds', 'seed_count',
+          'seedCount', 'seeders_count', 'seedersCount', 'seed', 'seeder_count', 'seederCount'], null)),
+        peers: torrentCount(first(item, ['peers', 'leechers', 'leechers_count',
+          'leechersCount', 'peer_count', 'peerCount'], null)),
         link: first(item, ['magnet', 'link', 'torrent', 'url'], ''),
         hash: first(item, ['hash', 'info_hash', 'infoHash', 'torrent_ih'], ''),
         raw: item
       };
     });
+  }
+
+  // Client-side ordering of loaded Seena and Kinozal torrent releases.
+  // No additional backend calls, and the original arrays are never mutated.
+  function torrentVoiceLabel(item) {
+    var voice = item && (item.voice || item.voice_label || item.voiceLabel ||
+      item.audio || item.audioLabel || '');
+    if (Array.isArray(voice)) voice = voice.map(function (x) {
+      return typeof x === 'string' ? x : first(x, ['name', 'label', 'title'], '');
+    }).filter(Boolean).join(', ');
+    if (voice && typeof voice === 'object') voice = first(voice, ['name', 'label', 'title'], '');
+    if (String(voice || '').trim()) return String(voice).trim();
+    // Kinozal does not give a separate voice field for related releases.
+    // Only recognize explicit language/voice markers in the release title.
+    var title = String(item && (item.title || item.name) || '');
+    var match = title.match(/(?:дублированн(?:ый|ая|ое|ые)?|дубляж|многоголос(?:ый|ая|ое)?|двухголос(?:ый|ая|ое)?|одноголос(?:ый|ая|ое)?|профессиональн(?:ый|ая|ое)?|любительск(?:ий|ая|ое)?|авторск(?:ий|ая|ое)?|оригинал(?:ьн(?:ый|ая|ое))?|субтитры|лицензи(?:я|онн(?:ый|ая|ое)?))/i);
+    return match ? match[0] : '';
+  }
+
+  function torrentQualityRank(item) {
+    var quality = [item && item.quality, item && item.format, item && item.name, item && item.title]
+      .filter(Boolean).join(' ').toLowerCase();
+    var pixels = 0;
+    if (/\b(?:2160p?|4k|uhd)\b/i.test(quality)) pixels = 2160;
+    else if (/\b(?:1440p?|2k)\b/i.test(quality)) pixels = 1440;
+    else if (/\b1080[pi]?\b|full[\s-]?hd/i.test(quality)) pixels = 1080;
+    else if (/\b720[pi]?\b|\bhd\b/i.test(quality)) pixels = 720;
+    else if (/\b576[pi]?\b/i.test(quality)) pixels = 576;
+    else if (/\b480[pi]?\b|\bsdrip\b/i.test(quality)) pixels = 480;
+    else if (/\b360[pi]?\b/i.test(quality)) pixels = 360;
+    else if (/\bdvd(?:rip)?\b/i.test(quality)) pixels = 480;
+    // Similar resolution: Remux > BluRay > WEB-DL > WEBRip > HDTV.
+    var release = /remux/i.test(quality) ? 50
+      : /blu[\s-]?ray|bdrip|brrip/i.test(quality) ? 40
+      : /web[\s.-]?dl/i.test(quality) ? 30
+      : /webrip/i.test(quality) ? 20
+      : /hdtv/i.test(quality) ? 10 : 0;
+    return pixels * 100 + release;
+  }
+
+  function sortTorrentItems(items, mode) {
+    var rows = Array.isArray(items) ? items : [];
+    mode = /^(seeds|quality|voice)$/.test(String(mode)) ? mode : 'seeds';
+    function seeds(item) {
+      var raw = item && (item.seeders == null ? item.seeds : item.seeders);
+      return torrentCount(raw);
+    }
+    return rows.map(function (item, index) { return { item: item, index: index }; })
+      .sort(function (a, b) {
+        var x = a.item || {}, y = b.item || {};
+        if (mode === 'voice') {
+          var vx = torrentVoiceLabel(x), vy = torrentVoiceLabel(y);
+          if (!vx && vy) return 1;
+          if (vx && !vy) return -1;
+          var vc = vx.localeCompare(vy, 'ru', { sensitivity: 'base' });
+          if (vc) return vc;
+        } else if (mode === 'quality') {
+          var qc = torrentQualityRank(y) - torrentQualityRank(x);
+          if (qc) return qc;
+        }
+        var sx = seeds(x), sy = seeds(y);
+        if (sx === null && sy !== null) return 1;
+        if (sy === null && sx !== null) return -1;
+        if (sx !== null && sy !== null && sx !== sy) return sy - sx;
+        return a.index - b.index;
+      }).map(function (entry) { return entry.item; });
   }
 
   function searchUrl(query) { return BASE + 'search?query=' + encodeURIComponent(query.trim()); }
@@ -336,6 +550,169 @@
     return Math.max(0, Math.min(length - 1, next));
   }
 
+
+  // A film may expose its trailer in the catalog row, the detail response or TMDB-style videos.
+  // Only known video formats/YouTube hosts are accepted; do not embed arbitrary page URLs.
+  function trailerMedia(value) {
+    if (value && typeof value === 'object') {
+      // Android Seena accepts a nonempty Trailer.key if Trailer.site is empty,
+      // or its normalized name contains "youtube"/"youtu".
+      var site = String(value.site || '').trim().toLowerCase();
+      var key = String(value.key || '').trim();
+      if ((!site || site.indexOf('youtu') !== -1) && /^[A-Za-z0-9_-]{11}$/.test(key))
+        return { mode: 'youtube', videoId: key };
+      return trailerMedia(value.url || value.link || value.src || '');
+    }
+    if (typeof value !== 'string') return null;
+    try {
+      var url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+      var host = url.hostname.toLowerCase(), id = '';
+      if (host === 'youtu.be') id = url.pathname.slice(1);
+      else if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com' || host === 'www.youtube-nocookie.com') {
+        if (url.pathname === '/watch') id = url.searchParams.get('v') || '';
+        else if (/^\/(?:embed|shorts)\//.test(url.pathname)) id = url.pathname.split('/')[2] || '';
+      }
+      if (id && /^[A-Za-z0-9_-]{11}$/.test(id))
+        return { mode: 'youtube', videoId: id };
+      if (/\.(?:mp4|m3u8)$/i.test(url.pathname))
+        return { mode: 'direct', url: url.href };
+    } catch (_) {}
+    return null;
+  }
+
+  function trailerSource(detail, item) {
+    var objects = [detail || {}, item && item.raw || {}, item || {}], fields = [
+      'trailer_url', 'trailerUrl', 'trailer', 'trailer_link', 'trailerLink',
+      'youtube_trailer_url', 'youtubeTrailerUrl'
+    ];
+    for (var i = 0; i < objects.length; i += 1) {
+      var obj = objects[i];
+      for (var f = 0; f < fields.length; f += 1) {
+        var source = trailerMedia(obj[fields[f]]);
+        if (source) return source;
+      }
+      var youtubeId = obj.youtube_id || obj.youtubeId;
+      if (youtubeId) {
+        var byId = trailerMedia({ site: 'YouTube', key: youtubeId });
+        if (byId) return byId;
+      }
+      var videos = obj.videos && (obj.videos.results || obj.videos.data || obj.videos);
+      if (!Array.isArray(videos)) continue;
+      var trailers = videos.filter(function (v) {
+        return v && /^(trailer|teaser|трейлер|тизер)$/i.test(String(v.type || v.video_type || ''));
+      }).sort(function (a, b) {
+        return (b.official === true ? 1 : 0) - (a.official === true ? 1 : 0);
+      });
+      for (var j = 0; j < trailers.length; j += 1) {
+        var video = trailerMedia(trailers[j]);
+        if (video) return video;
+      }
+    }
+    return null;
+  }
+
+  // Collect official film trailers across the API metadata. Russian variants rank
+  // first when the API actually marks them ru or explicitly names the dubbing.
+  // A Russian title alone does not prove the video has a Russian audio track.
+  function trailerCandidates(detail, item) {
+    var objects = [detail || {}, item && item.raw || {}, item || {}], result = [], byId = {};
+    function normalizeLanguage(value, title) {
+      var raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+      if (/^(ru|rus|ru-)/.test(raw)) return 'ru';
+      if (/^(en|eng|en-)/.test(raw)) return 'en';
+      if (/^[a-z]{2}(?:-[a-z]{2})?$/.test(raw)) return raw.slice(0, 2);
+      var hint = String(title || '').toLowerCase();
+      if (/русск|на русском|дубляж|дублирован|русская озвучка|russian dubbed|russian trailer/.test(hint)) return 'ru';
+      if (/\benglish\b|\boriginal language\b|\beng dub\b/i.test(hint)) return 'en';
+      return '';
+    }
+    function add(entry, priority, requiredType) {
+      if (!entry) return;
+      if (typeof entry === 'object' && requiredType) {
+        var type = String(entry.type || entry.video_type || entry.videoType || '').trim();
+        if (type && !/^(trailer|teaser|трейлер|тизер)$/i.test(type)) return;
+      }
+      var video = trailerMedia(entry);
+      if (!video || video.mode !== 'youtube') return;
+      var name = typeof entry === 'object' ? String(first(entry,
+        ['name', 'title', 'label'], '')).trim() : '';
+      var lang = typeof entry === 'object' ? normalizeLanguage(first(entry,
+        ['iso_639_1', 'iso639_1', 'language', 'lang', 'audio_language', 'audioLanguage'], ''), name)
+        : '';
+      var official = Boolean(entry && typeof entry === 'object' && entry.official === true);
+      var existing = byId[video.videoId];
+      if (existing) {
+        if (!existing.lang && lang) existing.lang = lang;
+        if (!existing.name && name) existing.name = name.slice(0, 90);
+        if (official) existing.official = true;
+        return;
+      }
+      var candidate = { mode: 'youtube', videoId: video.videoId, lang: lang,
+        name: name.slice(0, 90), official: official, rank: priority };
+      byId[video.videoId] = candidate;
+      result.push(candidate);
+    }
+    objects.forEach(function (obj) {
+      if (!obj || typeof obj !== 'object') return;
+      ['trailer', 'trailer_url', 'trailerUrl', 'trailer_link', 'trailerLink',
+        'youtube_trailer_url', 'youtubeTrailerUrl'].forEach(function (key) {
+        add(obj[key], 2, false);
+      });
+      if (obj.youtube_id || obj.youtubeId)
+        add({ site: 'YouTube', key: obj.youtube_id || obj.youtubeId }, 1, false);
+      var arrays = [obj.videos && (obj.videos.results || obj.videos.data || obj.videos),
+        obj.trailers && (obj.trailers.results || obj.trailers.data || obj.trailers)];
+      arrays.forEach(function (items) {
+        if (Array.isArray(items)) items.forEach(function (v) { add(v, 3, true); });
+      });
+    });
+    result.sort(function (a, b) {
+      var aRank = (a.lang === 'ru' ? 100 : 0) + (a.official ? 20 : 0) + a.rank;
+      var bRank = (b.lang === 'ru' ? 100 : 0) + (b.official ? 20 : 0) + b.rank;
+      return bRank - aRank;
+    });
+    return result.slice(0, 12).map(function (v) {
+      return { mode: v.mode, videoId: v.videoId, lang: v.lang,
+        name: v.name, official: v.official };
+    });
+  }
+
+  function trailerSearchQuery(item) {
+    var name = String(item && item.title || '').split(/\s+\/\s+/)[0].trim();
+    var year = String(item && item.year || '').match(/(?:19|20)\d{2}/);
+    return [name, year ? year[0] : '', 'трейлер'].filter(Boolean).join(' ').slice(0, 120);
+  }
+
+  function trailerNormalize(value) {
+    return ' ' + String(value || '').toLowerCase().replace(/ё/g, 'е')
+      .replace(/[^a-z0-9а-я]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+  }
+
+  function trailerSearchResults(results, item) {
+    var raw = item && item.raw || {}, name = String(item && item.title || '').split(/\s+\/\s+/)[0];
+    var names = [name, raw.original_title, raw.original_name].map(trailerNormalize)
+      .filter(function (v) { return v.trim().length >= 3; });
+    var yearMatch = String(item && item.year || '').match(/(?:19|20)\d{2}/);
+    return (Array.isArray(results) ? results : []).map(function (video) {
+      if (!video || !video.preview || !video.title) return null;
+      var title = trailerNormalize(video.title);
+      if (!/\b(trailer|teaser)\b/.test(title) && !/трейлер|тизер/.test(title)) return null;
+      if (/обзор|реакци|рецензи|разбор|пароди|фанатск|fan made|fanmade|reaction|review|breakdown/.test(title)) return null;
+      var nameLength = 0;
+      names.forEach(function (n) { if (title.indexOf(n) !== -1) nameLength = Math.max(nameLength, n.length - 2); });
+      if (!nameLength) return null;
+      var resultYear = String(video.title).match(/\b(?:19|20)\d{2}\b/);
+      if (nameLength < 5 && (!yearMatch || !resultYear || yearMatch[0] !== resultYear[0])) return null;
+      if (yearMatch && resultYear && Math.abs(Number(yearMatch[0]) - Number(resultYear[0])) > 1) return null;
+      var score = nameLength + (yearMatch && resultYear && yearMatch[0] === resultYear[0] ? 12 : 0)
+        + (/официальн|official/.test(title) ? 6 : 0)
+        + (/трейлер|trailer/.test(title) ? 5 : 0);
+      return { video: video, score: score };
+    }).filter(Boolean).sort(function (a, b) { return b.score - a.score; })
+      .slice(0, 8).map(function (match) { return match.video; });
+  }
+
   function matchBroadcastItems(response) {
     var rows = response && response.result && Array.isArray(response.result.broadcasts) ? response.result.broadcasts : [];
     return rows.filter(function (row) { return row && !row.isPaid && row.mediaId; }).map(function (row) {
@@ -366,6 +743,8 @@
     imageUrl: imageUrl,
     catalogItems: catalogItems,
     directSources: directSources,
+    veoveoStreamUrl: veoveoStreamUrl,
+    veoveoResolvedMedia: veoveoResolvedMedia,
     qualityDisplayLabel: qualityDisplayLabel,
     castItems: castItems,
     personInfo: personInfo,
@@ -373,6 +752,11 @@
     similarItems: similarItems,
     detailFacts: detailFacts,
     torrentItems: torrentItems,
+    torrentPlatform: torrentPlatform,
+    torrentSizeLabel: torrentSizeLabel,
+    torrentVoiceLabel: torrentVoiceLabel,
+    torrentQualityRank: torrentQualityRank,
+    sortTorrentItems: sortTorrentItems,
     searchUrl: searchUrl,
     catalogUrl: catalogUrl,
     catalogMetadataUrl: catalogMetadataUrl,
@@ -393,6 +777,10 @@
     matchPlayerUrl: matchPlayerUrl,
     matchStreamUrl: matchStreamUrl,
     inAppTvUrl: inAppTvUrl,
-    iptvStreamUrl: iptvStreamUrl
+    iptvStreamUrl: iptvStreamUrl,
+    trailerSource: trailerSource,
+    trailerCandidates: trailerCandidates,
+    trailerSearchQuery: trailerSearchQuery,
+    trailerSearchResults: trailerSearchResults
   };
 }));

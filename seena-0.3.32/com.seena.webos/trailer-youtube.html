@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>Seena · Трейлер</title>
+  <style>
+    html,body{margin:0;padding:0;width:100%;height:100%;background:#000;color:#fff;font:20px Arial,sans-serif;overflow:hidden}
+    button,input{font-family:inherit}
+    #player{position:absolute;inset:0;width:100%;height:100%}
+    #notice{position:absolute;top:35%;left:10%;width:80%;box-sizing:border-box;text-align:center;color:#fff;background:rgba(0,0,0,.85);padding:20px;border-radius:12px;pointer-events:none;z-index:5}
+    #notice[hidden]{display:none}
+    /* Leave the bottom 55px free for YouTube's genuine controls and settings cog. */
+    #remote-controls{position:absolute;bottom:62px;left:3%;right:3%;z-index:10;box-sizing:border-box;
+      padding:15px 22px 16px;border-radius:16px;background:rgba(5,12,23,.91);
+      border:1px solid rgba(160,183,219,.35);box-shadow:0 5px 32px rgba(0,0,0,.65)}
+    .progress-row{display:flex;align-items:center;gap:16px}
+    #seek{display:block;flex:1;width:100%;min-width:0;height:15px;cursor:pointer;
+      -webkit-appearance:none;appearance:none;border:0;border-radius:12px;
+      background:linear-gradient(to right,#71baff 0%,#71baff 0%,#35475d 0%,#35475d 100%)}
+    #seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:25px;height:25px;border-radius:50%;background:#fff;border:4px solid #369bfa;box-sizing:border-box}
+    #times{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:19px;color:#deeaff}
+    .actions{display:flex;align-items:center;gap:12px;margin-top:13px}
+    .action{flex:1;min-width:0;white-space:nowrap;background:#1c334e;color:#fff;
+      border:2px solid #526981;border-radius:11px;padding:13px 8px;font-size:20px;cursor:pointer}
+    .action.primary{background:#1678c7;border-color:#79c5ff;font-weight:bold}
+    .action:focus,#seek:focus{outline:4px solid #fff;outline-offset:3px;background-color:#215784}
+    .action:active{background:#226bab}
+    /* The LG Chromium 79 engine ignores flex gap; use explicit margins. */
+    .actions .action+.action{margin-left:9px}
+    #language-menu{position:absolute;left:11%;right:11%;bottom:240px;z-index:13;
+      box-sizing:border-box;max-height:calc(100vh - 280px);overflow-y:auto;padding:20px 24px;
+      background:rgba(9,22,41,.98);border:2px solid #7ac3ff;border-radius:14px;
+      box-shadow:0 8px 32px rgba(0,0,0,.8)}
+    #language-menu[hidden]{display:none}
+    #language-menu h2{margin:0 0 9px;font-size:25px}
+    #language-menu p{margin:5px 0 15px;font-size:17px;color:#b8cde6;line-height:1.4}
+    #language-choices{display:block}
+    .language-choice{display:block;width:100%;margin:8px 0;padding:15px 18px;text-align:left;
+      background:#1c324e;color:#fff;border:2px solid #405b80;border-radius:10px;font-size:20px}
+    .language-choice.selected{border-color:#76cb99;background:#194733}
+    .language-choice:focus,#language-close:focus{outline:4px solid white;outline-offset:3px}
+    #language-close,#language-search{margin-top:12px;padding:11px 20px;background:#275d91;color:#fff;
+      border:2px solid #8acaff;border-radius:9px;font-size:20px}
+    #language-search{margin-right:12px;background:#155342;border-color:#7fe2af}
+    #language-search:focus{outline:4px solid white;outline-offset:3px}
+    #quality-help{position:absolute;left:9%;right:9%;bottom:225px;z-index:12;box-sizing:border-box;
+      padding:22px 28px;background:rgba(8,23,41,.98);border:2px solid #72bfff;border-radius:14px;
+      font-size:22px;line-height:1.5;text-align:center}
+    #quality-help[hidden]{display:none}
+    #quality-help button{display:inline-block;margin-top:16px;font-size:20px;padding:12px 30px;
+      color:#fff;background:#1468af;border:2px solid #aad8ff;border-radius:9px}
+    #quality-help button:focus{outline:4px solid white;outline-offset:3px}
+    #hint{font-size:15px;color:#b2c5d8;text-align:center;margin-top:9px}
+    @media(max-width:900px){#remote-controls{left:1%;right:1%;padding:10px}
+      .action{font-size:15px;padding:12px 5px}.actions{gap:5px}
+      #times{font-size:15px}#hint{font-size:12px}}
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <div id="notice">Подключаем трейлер YouTube…</div>
+
+  <div id="remote-controls" aria-label="Управление трейлером">
+    <div class="progress-row">
+      <input id="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Перемотка по шкале времени">
+      <span id="times">00:00 / --:--</span>
+    </div>
+    <div class="actions">
+      <button id="back" class="action" type="button">← Назад</button>
+      <button id="rewind" class="action" type="button">⏪ −10 сек</button>
+      <button id="toggle" class="action primary" type="button">▶ Играть</button>
+      <button id="forward" class="action" type="button">+10 сек ⏩</button>
+      <button id="language" class="action" type="button">🌐 Язык / трейлер</button>
+      <button id="quality" class="action" type="button">⚙ Качество YouTube</button>
+    </div>
+    <div id="hint">Пульт: ◀ / ▶ перемотка по 10 сек · OK — выбранная кнопка · ▲ / ▼ — переключение кнопок</div>
+  </div>
+
+  <div id="language-menu" hidden aria-label="Выбор языка и варианта трейлера">
+    <h2>🌐 Трейлер и язык</h2>
+    <p id="language-note">Язык указан по данным ролика, а не по проверке его озвучки.</p>
+    <div id="language-choices"></div>
+    <button id="language-search" type="button">🔎 Найти русский трейлер</button>
+    <button id="language-close" type="button">Закрыть</button>
+  </div>
+
+  <div id="quality-help" hidden>
+    Качество выбирает YouTube автоматически. Для ручного выбора наведи указатель
+    Magic Remote на нижнюю панель видео и открой ⚙ YouTube → Качество
+    (если этот пункт доступен в плеере).
+    <div><button id="quality-close" type="button">Понятно</button></div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      // Original Android Seena uses the YouTube IFrame API. Here the HTML is served by
+      // the localhost helper so YouTube receives an HTTP origin and Referer on webOS.
+      // Never promise custom quality selection: YouTube removed setPlaybackQuality().
+      var params = new URLSearchParams(location.search);
+      var videoId = params.get('id') || '';
+      var notice = document.getElementById('notice');
+      var seek = document.getElementById('seek');
+      var timeLabel = document.getElementById('times');
+      var toggleButton = document.getElementById('toggle');
+      var languageMenu = document.getElementById('language-menu');
+      var languageChoices = document.getElementById('language-choices');
+      var clipOptions = [];
+      var rawClips = params.get('clips');
+      if (rawClips && rawClips.length <= 3000) {
+        try {
+          var parsedClips = JSON.parse(rawClips);
+          if (Array.isArray(parsedClips)) parsedClips.slice(0, 12).forEach(function (clip) {
+            if (!clip || !/^[A-Za-z0-9_-]{11}$/.test(String(clip.id || '')) ||
+                clipOptions.some(function (candidate) { return candidate.id === clip.id; })) return;
+            clipOptions.push({ id: clip.id,
+              lang: /^[a-z]{2}(?:-[a-z]{2})?$/i.test(String(clip.lang || ''))
+                ? String(clip.lang).toLowerCase().slice(0, 2) : '',
+              title: String(clip.title || '').slice(0, 90) });
+          });
+        } catch (_) {}
+      }
+      if (!clipOptions.some(function (clip) { return clip.id === videoId; }))
+        clipOptions.unshift({ id: videoId, lang: '', title: '' });
+      var qualityHelp = document.getElementById('quality-help');
+      var buttons = [
+        document.getElementById('back'),
+        document.getElementById('rewind'),
+        toggleButton,
+        document.getElementById('forward'),
+        document.getElementById('language'),
+        document.getElementById('quality')
+      ];
+      var player = null, progressTimer = null, dragging = false;
+      var playing = false, lastDuration = 0;
+      function tell(message) { notice.textContent = message; notice.hidden = !message; }
+      function notify(type, extra) {
+        if (window.parent && window.parent !== window) {
+          var value = extra || {};
+          value.type = 'seena-youtube-trailer';
+          value.action = type;
+          window.parent.postMessage(value, '*');
+        }
+      }
+      function fmt(sec) {
+        sec = Math.max(0, Math.floor(Number(sec) || 0));
+        var min = Math.floor(sec / 60), seconds = sec % 60;
+        var hours = Math.floor(min / 60);
+        min = min % 60;
+        return (hours ? hours + ':' + ('0' + min).slice(-2) : ('0' + min).slice(-2)) +
+          ':' + ('0' + seconds).slice(-2);
+      }
+      function updateToggle() {
+        toggleButton.textContent = playing ? '❚❚ Пауза' : '▶ Играть';
+        toggleButton.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
+      }
+      function updateProgress() {
+        if (!player || !player.getCurrentTime) return;
+        try {
+          var current = Math.max(0, player.getCurrentTime() || 0);
+          var duration = Math.max(0, player.getDuration() || 0);
+          if (duration > 0) lastDuration = duration;
+          duration = duration || lastDuration;
+          if (!dragging) {
+            var fraction = duration ? Math.min(1, current / duration) : 0;
+            seek.value = String(Math.round(fraction * 1000));
+            var pct = (fraction * 100).toFixed(2) + '%';
+            seek.style.background = 'linear-gradient(to right,#71baff 0%,#71baff ' +
+              pct + ',#35475d ' + pct + ',#35475d 100%)';
+          }
+          timeLabel.textContent = fmt(current) + ' / ' + (duration ? fmt(duration) : '--:--');
+          notify('progress', { current: current, duration: duration });
+        } catch (_) {}
+      }
+      function togglePlayback() {
+        if (!player || !player.getPlayerState) return;
+        try {
+          if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+          else player.playVideo();
+        } catch (_) {}
+      }
+      function focusButton(delta) {
+        var index = buttons.indexOf(document.activeElement);
+        if (index < 0) index = 2;
+        else index = (index + delta + buttons.length) % buttons.length;
+        buttons[index].focus();
+      }
+      function languageLabel(lang) {
+        var labels = { ru: '🇷🇺 Русский', en: '🇬🇧 English', uk: '🇺🇦 Українська',
+          de: '🇩🇪 Deutsch', fr: '🇫🇷 Français', es: '🇪🇸 Español', ja: '🇯🇵 日本語',
+          ko: '🇰🇷 한국어' };
+        return labels[lang] || (lang ? lang.toUpperCase() : 'Язык не указан');
+      }
+      function showLanguageMenu(show) {
+        languageMenu.hidden = !show;
+        if (!show) { document.getElementById('language').focus(); return; }
+        while (languageChoices.firstChild) languageChoices.removeChild(languageChoices.firstChild);
+        document.getElementById('language-note').textContent =
+          clipOptions.length > 1 ?
+            'Выбери ролик. Язык берётся из данных Seena, фактическая дорожка может отличаться.' :
+            'Seena предоставила только один YouTube-трейлер. Переключать язык звука через YouTube API нельзя.';
+        clipOptions.forEach(function (clip) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'language-choice' + (clip.id === videoId ? ' selected' : '');
+          button.textContent = (clip.id === videoId ? '▶ ' : '') +
+            languageLabel(clip.lang) + (clip.title ? ' · ' + clip.title : '');
+          button.addEventListener('click', function () {
+            languageMenu.hidden = true;
+            document.getElementById('language').focus();
+            if (clip.id === videoId) return;
+            videoId = clip.id;
+            playing = false;
+            lastDuration = 0;
+            updateToggle();
+            timeLabel.textContent = '00:00 / --:--';
+            tell('');
+            try {
+              if (player && player.loadVideoById) player.loadVideoById(videoId);
+              else tell('Не удалось переключить ролик YouTube.');
+            } catch (_) { tell('Не удалось переключить ролик YouTube.'); }
+          });
+          languageChoices.appendChild(button);
+        });
+        (languageChoices.querySelector('.selected') || languageChoices.firstChild ||
+          document.getElementById('language-close')).focus();
+      }
+      function focusLanguageChoice(delta) {
+        var choices = languageChoices.querySelectorAll('button');
+        if (!choices.length) return;
+        var index = Array.prototype.indexOf.call(choices, document.activeElement);
+        if (index < 0) index = 0;
+        else index = (index + delta + choices.length) % choices.length;
+        choices[index].focus();
+      }
+      function showQualityHelp(show) {
+        qualityHelp.hidden = !show;
+        if (show) document.getElementById('quality-close').focus();
+        else document.getElementById('quality').focus();
+      }
+      document.getElementById('back').addEventListener('click', function () { notify('back'); });
+      document.getElementById('rewind').addEventListener('click', function () { window.seekBy(-10); });
+      document.getElementById('forward').addEventListener('click', function () { window.seekBy(10); });
+      toggleButton.addEventListener('click', togglePlayback);
+      document.getElementById('quality').addEventListener('click', function () { showQualityHelp(true); });
+      document.getElementById('language').addEventListener('click', function () { showLanguageMenu(true); });
+      document.getElementById('language-close').addEventListener('click', function () { showLanguageMenu(false); });
+      document.getElementById('language-search').addEventListener('click', function () {
+        showLanguageMenu(false);
+        notify('search-russian');
+      });
+      window.addEventListener('message', function (event) {
+        if (event.source !== window.parent) return;
+        var data = event.data;
+        if (!data || data.type !== 'seena-youtube-trailer-control' ||
+            data.action !== 'add-clip' || !data.clip ||
+            !/^[A-Za-z0-9_-]{11}$/.test(String(data.clip.id || ''))) return;
+        var clip = { id: String(data.clip.id), lang: 'ru',
+          title: String(data.clip.title || '').slice(0, 90) };
+        if (!clipOptions.some(function (entry) { return entry.id === clip.id; }))
+          clipOptions.unshift(clip);
+        languageMenu.hidden = true;
+        videoId = clip.id;
+        lastDuration = 0;
+        playing = false;
+        updateToggle();
+        tell('');
+        timeLabel.textContent = '00:00 / --:--';
+        try {
+          if (player && player.loadVideoById) player.loadVideoById(videoId);
+          else tell('Не удалось переключить YouTube-трейлер.');
+        } catch (_) { tell('Не удалось переключить YouTube-трейлер.'); }
+      });
+      document.getElementById('quality-close').addEventListener('click', function () { showQualityHelp(false); });
+      seek.addEventListener('input', function () {
+        dragging = true;
+        timeLabel.textContent = fmt(lastDuration * Number(seek.value) / 1000) +
+          ' / ' + (lastDuration ? fmt(lastDuration) : '--:--');
+      });
+      seek.addEventListener('change', function () {
+        dragging = false;
+        window.seekToFraction(Number(seek.value) / 1000);
+      });
+      window.seekBy = function (delta) {
+        if (!player || !player.getCurrentTime) return;
+        try {
+          var current = player.getCurrentTime() || 0;
+          var duration = player.getDuration() || 0;
+          var target = Math.max(0, current + delta);
+          player.seekTo(duration > 0 ? Math.min(target, duration) : target, true);
+          updateProgress();
+        } catch (_) {}
+      };
+      window.seekToFraction = function (fraction) {
+        if (!player || !player.getDuration) return;
+        try {
+          var duration = player.getDuration() || 0;
+          if (duration > 0) player.seekTo(duration * Math.max(0, Math.min(1, fraction)), true);
+          updateProgress();
+        } catch (_) {}
+      };
+      if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+        tell('Неверный идентификатор трейлера.');
+        return;
+      }
+      window.onYouTubeIframeAPIReady = function () {
+        try {
+          player = new YT.Player('player', {
+            videoId: videoId,
+            playerVars: {
+              autoplay: 1, playsinline: 1, rel: 0, controls: 1, disablekb: 0,
+              fs: 1, iv_load_policy: 3, enablejsapi: 1, origin: location.origin,
+              hl: 'ru', cc_lang_pref: 'ru'
+            },
+            events: {
+              onReady: function (event) {
+                tell('');
+                event.target.playVideo();
+                toggleButton.focus();
+                notify('ready');
+                updateProgress();
+                progressTimer = setInterval(updateProgress, 500);
+              },
+              onStateChange: function (event) {
+                playing = event.data === YT.PlayerState.PLAYING;
+                updateToggle();
+                updateProgress();
+              },
+              onAutoplayBlocked: function () {
+                tell('Автозапуск заблокирован. Нажмите ▶ Играть.');
+              },
+              onError: function (event) {
+                var code = Number(event && event.data) || 0;
+                var reason = code === 153 ? 'Не передан HTTP Referer'
+                  : (code === 101 || code === 150) ? 'Автор запретил встраивание'
+                  : code === 100 ? 'Ролик удалён или закрыт'
+                  : code === 5 ? 'Плеер не поддерживается' : 'Ошибка видеоплеера';
+                tell('YouTube ' + code + ': ' + reason + '. Нажмите «Назад».');
+                notify('error', { code: code });
+              }
+            }
+          });
+        } catch (_) { tell('Не удалось открыть плеер YouTube.'); notify('error'); }
+      };
+      // Key presses are handled by this HTML wrapper whenever it has focus.
+      // The nested youtube.com iframe is cross-origin, so focus our buttons
+      // instead of relying on its keyboard events to bubble to the wrapper.
+      document.addEventListener('keydown', function (event) {
+        var code = event.keyCode;
+        if (code === 461 || code === 27 || code === 8) {
+          event.preventDefault();
+          if (!languageMenu.hidden) showLanguageMenu(false);
+          else if (!qualityHelp.hidden) showQualityHelp(false);
+          else notify('back');
+        } else if (code === 412 || code === 37) {
+          event.preventDefault();
+          if (!languageMenu.hidden) focusLanguageChoice(-1);
+          else if (qualityHelp.hidden) window.seekBy(-10);
+        } else if (code === 417 || code === 39) {
+          event.preventDefault();
+          if (!languageMenu.hidden) focusLanguageChoice(1);
+          else if (qualityHelp.hidden) window.seekBy(10);
+        } else if (code === 38 || code === 40) {
+          event.preventDefault();
+          if (!languageMenu.hidden) focusLanguageChoice(code === 38 ? -1 : 1);
+          else if (qualityHelp.hidden) focusButton(code === 38 ? -1 : 1);
+        } else if (code === 415) {
+          event.preventDefault();
+          if (player) player.playVideo();
+        } else if (code === 19) {
+          event.preventDefault();
+          if (player) player.pauseVideo();
+        } else if (code === 10252 || code === 179 || code === 32) {
+          event.preventDefault();
+          togglePlayback();
+        } else if (code === 13 && document.activeElement !== seek &&
+                   document.activeElement.tagName !== 'BUTTON') {
+          event.preventDefault();
+          togglePlayback();
+        }
+      }, true);
+      window.addEventListener('unload', function () {
+        clearInterval(progressTimer);
+        if (player && player.destroy) { try { player.destroy(); } catch (_) {} }
+      });
+      var script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = function () {
+        tell('Не удалось загрузить YouTube. Проверьте подключение к сети.');
+        notify('error');
+      };
+      document.head.appendChild(script);
+    }());
+  </script>
+</body>
+</html>
